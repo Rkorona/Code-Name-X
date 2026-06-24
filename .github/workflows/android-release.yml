@@ -27,19 +27,14 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 4. 提前安装 CMake，避免 Gradle 构建时临时下载失败
-    - name: Install CMake via sdkmanager
-      run: |
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "cmake;3.22.1"
-
-    # 5. 从 GitHub Secrets 解密出证书文件，并写入到 app 目录下
+    # 4. 从 GitHub Secrets 解密出证书文件，并写入到 app 目录下
     - name: Decode Keystore
       env:
         ENCODED_STRING: ${{ secrets.SIGNING_KEY }}
       run: |
         echo "$ENCODED_STRING" | base64 --decode > app/release.jks
 
-    # 6. 执行 Gradle 编译命令
+    # 5. 执行 Gradle 编译命令
     - name: Build Release APK
       env:
         KEYSTORE_PATH: "release.jks" # 这里填相对 app 目录的路径
@@ -48,7 +43,7 @@ jobs:
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       run: ./gradlew assembleRelease
 
-    # 7. 将构建好的 APK 上传到 GitHub Actions 的 Artifacts 中供下载
+    # 6. 将构建好的 APK 上传到 GitHub Actions 的 Artifacts 中供下载
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
