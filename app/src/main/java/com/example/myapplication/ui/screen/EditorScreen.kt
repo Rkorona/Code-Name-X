@@ -241,6 +241,8 @@ fun EditorScreen(
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT
                         )
+                        isFocusable = true
+                        isFocusableInTouchMode = true
                         setBackgroundColor(if (isDark) 0xFF0D0D0D.toInt() else 0xFFFAFAFA.toInt())
 
                         settings.apply {

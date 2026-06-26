@@ -61,6 +61,11 @@
       AndroidBridge.onStatsChanged(model.getLineCount(), model.getValueLength());
     });
 
+    // 点击编辑区时让 Monaco 聚焦其内部 textarea，触发系统软键盘
+    document.getElementById('editor').addEventListener('click', function () {
+      window.editor.focus();
+    });
+
     setTimeout(function () {
       AndroidBridge.onReady();
     }, 0);
