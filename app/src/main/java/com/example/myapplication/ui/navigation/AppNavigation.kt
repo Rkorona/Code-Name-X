@@ -1,11 +1,13 @@
 package com.example.myapplication.ui.navigation
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.example.myapplication.ui.component.NewLocalProjectDialog
 import com.example.myapplication.ui.model.Project
 import com.example.myapplication.ui.model.ProjectType
@@ -43,6 +45,8 @@ private val localProjectIconColors = listOf(
 
 @Composable
 fun AppNavigation() {
+    val context = LocalContext.current
+
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -64,25 +68,38 @@ fun AppNavigation() {
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
 
+        // 持久化 URI 访问权限，app 重启后仍可读写该目录
+        val persistFlags =
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, persistFlags)
+        }
+
+        // 从 URI 解析文件夹名和可读路径
+        // URI lastPathSegment 格式通常是 "primary:Documents/my-project"
         val rawSegment = uri.lastPathSegment ?: uri.toString()
         val folderName = rawSegment
-            .substringAfterLast(':')
-            .substringAfterLast('/')
+            .substringAfterLast(':')  // 去存储卷前缀（primary:/secondary:）
+            .substringAfterLast('/')  // 取最后一段
             .ifBlank { rawSegment }
 
-        val displayPath = rawSegment
+        // 拼出用户友好的可读路径，例如 /storage/emulated/0/Documents/my-project
+        val readablePath = rawSegment
             .substringAfterLast(':')
-            .ifBlank { "本地存储" }
+            .let { relativePath ->
+                if (relativePath.isNotBlank()) "/storage/emulated/0/$relativePath"
+                else uri.toString()
+            }
 
         val newProject = Project(
             id = System.currentTimeMillis().toString(),
             name = folderName,
-            description = displayPath,
+            description = readablePath,
             type = ProjectType.LOCAL,
             lastModified = "刚刚",
             iconColor = nextLocalColor(),
             isActive = false,
-            localPath = uri.toString()
+            localPath = uri.toString()   // 保存原始 content URI，用于后续文件操作
         )
         projects.add(0, newProject)
     }
