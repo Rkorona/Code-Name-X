@@ -35,7 +35,8 @@ fun AppNavigation() {
                         file = projectToEditorFile(project)
                     )
                 },
-                onAddProject = {
+                onNewLocalProject = {
+                    // 新建本地项目：打开空白编辑器
                     currentScreen = Screen.Editor(
                         file = EditorFile(
                             name = "untitled.js",
@@ -44,8 +45,14 @@ fun AppNavigation() {
                         )
                     )
                 },
+                onCloneGithub = {
+                    // TODO: 打开 GitHub 克隆对话框
+                },
+                onImportFile = {
+                    // TODO: 打开系统文件选择器
+                },
                 onSettingsClick = {
-                    // 后续接入设置页
+                    // TODO: 后续接入设置页
                 }
             )
         }

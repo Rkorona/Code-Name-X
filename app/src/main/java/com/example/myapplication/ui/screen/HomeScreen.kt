@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.ui.component.AddProjectAction
+import com.example.myapplication.ui.component.AddProjectSheet
 import com.example.myapplication.ui.component.AppBottomNavBar
 import com.example.myapplication.ui.model.Project
 import com.example.myapplication.ui.model.ProjectType
@@ -65,10 +67,13 @@ fun HomeScreen(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     onProjectClick: (Project) -> Unit = {},
-    onAddProject: () -> Unit = {},
+    onNewLocalProject: () -> Unit = {},
+    onCloneGithub: () -> Unit = {},
+    onImportFile: () -> Unit = {},
     onSettingsClick: () -> Unit = {}
 ) {
     var sortMenuExpanded by remember { mutableStateOf(false) }
+    var showAddSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -77,7 +82,7 @@ fun HomeScreen(
                     IconButton(onClick = {}) {
                         Icon(
                             imageVector = Icons.Outlined.Hub,
-                            contentDescription = "返回",
+                            contentDescription = "Logo",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -133,7 +138,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = onAddProject,
+                onClick = { showAddSheet = true },
                 shape = RoundedCornerShape(16.dp),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -157,6 +162,20 @@ fun HomeScreen(
             projects = sampleProjects,
             onProjectClick = onProjectClick,
             modifier = Modifier.padding(innerPadding)
+        )
+    }
+
+    // Bottom Sheet：在 Scaffold 外层渲染，避免被 innerPadding 影响
+    if (showAddSheet) {
+        AddProjectSheet(
+            onAction = { action ->
+                when (action) {
+                    AddProjectAction.NEW_LOCAL    -> onNewLocalProject()
+                    AddProjectAction.CLONE_GITHUB -> onCloneGithub()
+                    AddProjectAction.IMPORT_FILE  -> onImportFile()
+                }
+            },
+            onDismiss = { showAddSheet = false }
         )
     }
 }
