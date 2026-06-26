@@ -53,7 +53,26 @@
       tabSize: 4,
       insertSpaces: true,
       contextmenu: false,
-      fixedOverflowWidgets: true
+      fixedOverflowWidgets: true,
+      quickSuggestions: { other: true, comments: false, strings: false },
+      suggestOnTriggerCharacters: true,
+      acceptSuggestionOnEnter: 'on',
+      tabCompletion: 'on',
+      wordBasedSuggestions: 'currentDocument',
+      suggest: {
+        showMethods: true,
+        showFunctions: true,
+        showConstructors: true,
+        showFields: true,
+        showVariables: true,
+        showClasses: true,
+        showModules: true,
+        showProperties: true,
+        showKeywords: true,
+        showWords: true,
+        showSnippets: true
+      },
+      parameterHints: { enabled: true }
     });
 
     window.editor.onDidChangeModelContent(function () {
