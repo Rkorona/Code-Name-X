@@ -1,6 +1,8 @@
 package com.example.myapplication.ui.screen
 
 import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -14,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +50,7 @@ fun EditorScreen(
 ) {
     val view = LocalView.current
     val scope = rememberCoroutineScope()
+    val handler = remember { Handler(Looper.getMainLooper()) }
 
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     var isEditorReady by remember { mutableStateOf(false) }
@@ -68,6 +70,7 @@ fun EditorScreen(
         window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         onDispose {
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
+            handler.removeCallbacksAndMessages(null)
         }
     }
 
@@ -87,6 +90,18 @@ fun EditorScreen(
                 hasUnsavedChanges = false
                 isSaving = false
                 snackbarMessage = "已保存"
+            }
+        }
+    }
+
+    // 轮询直到 window.EditorBridge 就绪再调用 init
+    fun pollAndInit(wv: WebView, attemptsLeft: Int = 20) {
+        wv.evaluateJavascript("typeof window.EditorBridge") { result ->
+            if (result?.contains("object") == true || result?.contains("function") == true) {
+                EditorCommands.init(wv, file.code, file.lang)
+                isEditorReady = true
+            } else if (attemptsLeft > 0) {
+                handler.postDelayed({ pollAndInit(wv, attemptsLeft - 1) }, 150)
             }
         }
     }
@@ -165,12 +180,12 @@ fun EditorScreen(
                             displayZoomControls = false
                         }
 
+                        // JS→Kotlin bridge：onContentChange / onSelectionChange
                         val bridge = EditorBridge(
                             scope = scope,
                             callback = object : EditorCallback {
                                 override fun onReady() {
-                                    isEditorReady = true
-                                    EditorCommands.init(this@apply, file.code, file.lang)
+                                    // 由 onPageFinished 轮询接管，此处留空
                                 }
                                 override fun onContentChange(content: String) {
                                     hasUnsavedChanges = true
@@ -182,14 +197,17 @@ fun EditorScreen(
                             }
                         )
                         addJavascriptInterface(bridge, "Android")
-
                         webViewRef.value = this
 
                         webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView, url: String) {
+                                // 页面 HTML 加载完毕，开始轮询等待 JS 模块执行
+                                handler.postDelayed({ pollAndInit(view) }, 100)
+                            }
                             override fun shouldOverrideUrlLoading(
                                 view: WebView,
                                 request: WebResourceRequest
-                            ): Boolean = true
+                            ): Boolean = request.url.scheme != "file"
                         }
 
                         loadUrl("file:///android_asset/editor/src/index.html")
