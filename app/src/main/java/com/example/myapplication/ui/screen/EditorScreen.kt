@@ -1,7 +1,6 @@
 package com.example.myapplication.ui.screen
 
 import android.annotation.SuppressLint
-import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -15,17 +14,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import com.example.myapplication.ui.editor.EditorBridge
+import com.example.myapplication.ui.editor.EditorCallback
+import com.example.myapplication.ui.editor.EditorCommands
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 // ─────────────────────────────────────────────
 // 数据模型
@@ -36,82 +34,6 @@ data class EditorFile(
     val code: String,
     val lang: String = name.substringAfterLast('.', "js")
 )
-
-// ─────────────────────────────────────────────
-// JS ↔ Kotlin Bridge
-// ─────────────────────────────────────────────
-
-class EditorJsBridge(
-    private val onReady: () -> Unit,
-    private val onContentChange: (String) -> Unit
-) {
-    @JavascriptInterface
-    fun onEditorReady() {
-        onReady()
-    }
-
-    @JavascriptInterface
-    fun onContentChange(content: String) {
-        onContentChange(content)
-    }
-}
-
-// ─────────────────────────────────────────────
-// WebView 操作封装
-// ─────────────────────────────────────────────
-
-object EditorCommands {
-
-    /** 转义代码字符串，安全注入到 JS backtick 模板中 */
-    private fun String.escapeForJs(): String =
-        this.replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("$", "\\$")
-
-    fun init(webView: WebView, code: String, lang: String) {
-        val escaped = code.escapeForJs()
-        webView.evaluateJavascript(
-            "window.EditorBridge.init({ code: `$escaped`, lang: `$lang`, theme: 'dark' })",
-            null
-        )
-    }
-
-    fun setContent(webView: WebView, code: String) {
-        val escaped = code.escapeForJs()
-        webView.evaluateJavascript(
-            "window.EditorBridge.setContent(`$escaped`)",
-            null
-        )
-    }
-
-    fun getContent(webView: WebView, callback: (String) -> Unit) {
-        webView.evaluateJavascript("window.EditorBridge.getContent()") { raw ->
-            // evaluateJavascript 返回的是 JSON 字符串，需要去掉首尾引号并反转义
-            val content = raw
-                ?.removeSurrounding("\"")
-                ?.replace("\\n", "\n")
-                ?.replace("\\t", "\t")
-                ?.replace("\\\"", "\"")
-                ?.replace("\\\\", "\\")
-                ?: ""
-            callback(content)
-        }
-    }
-
-    fun setLanguage(webView: WebView, lang: String) {
-        webView.evaluateJavascript(
-            "window.EditorBridge.setLanguage(`$lang`)",
-            null
-        )
-    }
-
-    fun setCursor(webView: WebView, line: Int, col: Int) {
-        webView.evaluateJavascript(
-            "window.EditorBridge.setCursor($line, $col)",
-            null
-        )
-    }
-}
 
 // ─────────────────────────────────────────────
 // EditorScreen
@@ -125,12 +47,9 @@ fun EditorScreen(
     onBack: () -> Unit,
     onSave: (String) -> Unit
 ) {
-    val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
-    val isDark = true // 或接入 isSystemInDarkTheme()
 
-    // 保存 WebView 引用，跨 recomposition 稳定
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     var isEditorReady by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -140,25 +59,18 @@ fun EditorScreen(
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 拦截返回键，未保存时弹确认
     BackHandler(enabled = hasUnsavedChanges) {
         showDiscardDialog = true
     }
 
-    // 软键盘适配：让 WebView 随键盘自动 resize
     DisposableEffect(view) {
         val window = (view.context as? androidx.activity.ComponentActivity)?.window
-        window?.let {
-            WindowCompat.setDecorFitsSystemWindows(it, false)
-        }
+        window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         onDispose {
-            window?.let {
-                WindowCompat.setDecorFitsSystemWindows(it, true)
-            }
+            window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
         }
     }
 
-    // Snackbar 触发
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -166,7 +78,6 @@ fun EditorScreen(
         }
     }
 
-    // 保存操作
     fun saveFile() {
         val wv = webViewRef.value ?: return
         isSaving = true
@@ -206,7 +117,6 @@ fun EditorScreen(
                     }
                 },
                 actions = {
-                    // 语言切换下拉
                     LangDropdown(
                         current = currentLang,
                         onSelect = { lang ->
@@ -214,7 +124,6 @@ fun EditorScreen(
                             webViewRef.value?.let { EditorCommands.setLanguage(it, lang) }
                         }
                     )
-                    // 保存按钮
                     IconButton(
                         onClick = { saveFile() },
                         enabled = !isSaving && isEditorReady
@@ -242,7 +151,6 @@ fun EditorScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            // WebView
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -252,40 +160,36 @@ fun EditorScreen(
                             domStorageEnabled = true
                             allowFileAccessFromFileURLs = true
                             allowUniversalAccessFromFileURLs = true
-                            // 关键：让 WebView 随软键盘 resize
                             setSupportZoom(false)
                             builtInZoomControls = false
                             displayZoomControls = false
                         }
 
-                        // 在 AndroidView factory 里
                         val bridge = EditorBridge(
                             scope = scope,
                             callback = object : EditorCallback {
                                 override fun onReady() {
                                     isEditorReady = true
-                                    EditorCommands.init(webView, file.code, file.lang)
+                                    EditorCommands.init(this@apply, file.code, file.lang)
                                 }
                                 override fun onContentChange(content: String) {
                                     hasUnsavedChanges = true
                                 }
-                                override fun onSelectionChange(line: Int, col: Int) {
-                                    // 可以在状态栏显示 "行:列"
-                                }
+                                override fun onSelectionChange(line: Int, col: Int) {}
                                 override fun onError(message: String) {
                                     snackbarMessage = "编辑器错误：$message"
                                 }
                             }
                         )
-                        webView.addJavascriptInterface(bridge, "Android")
-                            
+                        addJavascriptInterface(bridge, "Android")
+
                         webViewRef.value = this
 
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(
                                 view: WebView,
                                 request: WebResourceRequest
-                            ): Boolean = true // 阻止跳转外部链接
+                            ): Boolean = true
                         }
 
                         loadUrl("file:///android_asset/editor/index.html")
@@ -293,7 +197,6 @@ fun EditorScreen(
                 }
             )
 
-            // 加载中遮罩
             if (!isEditorReady) {
                 Box(
                     modifier = Modifier
@@ -311,7 +214,6 @@ fun EditorScreen(
         }
     }
 
-    // 放弃更改确认弹窗
     if (showDiscardDialog) {
         AlertDialog(
             onDismissRequest = { showDiscardDialog = false },
@@ -339,7 +241,7 @@ private fun LangDropdown(
     current: String,
     onSelect: (String) -> Unit
 ) {
-    val langs = listOf("js", "ts", "jsx", "py", "cpp", "c", "java", "html", "css", "json")
+    val langs = listOf("js", "ts", "jsx", "py", "cpp", "c", "java", "kotlin", "dart", "html", "css", "json")
     var expanded by remember { mutableStateOf(false) }
 
     Box {
@@ -356,10 +258,7 @@ private fun LangDropdown(
                     onClick = {
                         onSelect(lang)
                         expanded = false
-                    },
-                    leadingIcon = if (lang == current) {
-                        { Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                    } else null
+                    }
                 )
             }
         }

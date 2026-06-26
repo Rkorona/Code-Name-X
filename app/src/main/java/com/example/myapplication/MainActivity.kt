@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
-import com.example.myapplication.ui.model.Project
+import com.example.myapplication.model.Project
 import com.example.myapplication.ui.screen.EditorFile
 import com.example.myapplication.ui.screen.EditorScreen
 import com.example.myapplication.ui.screen.HomeScreen
