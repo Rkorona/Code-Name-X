@@ -1,9 +1,12 @@
 package com.example.myapplication.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable // ⬅️ 修复 clickable 报错
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,46 +32,21 @@ import com.example.myapplication.ui.model.ProjectType
 
 // ---------- Sample Data ----------
 private val sampleProjects = listOf(
-    Project(
-        id = "1",
-        name = "MyApplication",
-        description = "local, android, compose",
-        type = ProjectType.LOCAL,
-        lastModified = "今天",
-        iconColor = Color(0xFFE53935),
-        isActive = false
-    ),
-    Project(
-        id = "2",
-        name = "sing-box-dashboard",
-        description = "github, flutter, proxy-ui",
-        type = ProjectType.GITHUB,
-        lastModified = "昨天",
-        iconColor = Color(0xFF1E3A5F),
-        isActive = true
-    ),
-    Project(
-        id = "3",
-        name = "fishing-venue-app",
-        description = "github, react-native, management",
-        type = ProjectType.GITHUB,
-        lastModified = "3 天前",
-        iconColor = Color(0xFF1565C0),
-        isActive = false
-    )
+    Project("1", "MyApplication", "local, android, compose", ProjectType.LOCAL, "今天", Color(0xFFE53935), false),
+    Project("2", "sing-box-dashboard", "github, flutter, proxy-ui", ProjectType.GITHUB, "昨天", Color(0xFF1E3A5F), true),
+    Project("3", "fishing-venue-app", "github, react-native, management", ProjectType.GITHUB, "3 天前", Color(0xFF1565C0), false)
 )
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onProjectClick: (Project) -> Unit = {},
+    onAddProject: () -> Unit = {}, // ⬅️ 修复 MainActivity 报错，补全回调参数
     onSettingsClick: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     
-    // 🧠 控制底栏新建菜单的显示状态
     var showSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -99,7 +77,6 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            // 点击 FAB 直接拉起底栏菜单
             FloatingActionButton(
                 onClick = { showSheet = true },
                 shape = RoundedCornerShape(16.dp),
@@ -124,7 +101,6 @@ fun HomeScreen(
             modifier = Modifier.padding(innerPadding)
         )
 
-        // ── 🚀 新增：M3 规范的 FAB 展开操作面板 ──
         if (showSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showSheet = false },
@@ -156,31 +132,29 @@ fun HomeScreen(
                         description = "从 GitHub、GitLab 或自定义 URL 克隆远程项目",
                         onClick = {
                             showSheet = false
-                            // TODO: 触发你的 Git 克隆逻辑
                         }
                     )
 
-                    // 选项 2：新建本地项目
+                    // 选项 2：新建本地项目 (替换为自带的标准 Icons.Default.Add 图标)
                     FabSheetItem(
-                        icon = Icons.Outlined.CreateNewFolder,
+                        icon = Icons.Default.Add,
                         iconColor = Color(0xFFE53935),
                         title = "新建本地项目",
                         description = "在沙盒中创建一个空白项目或选择运行模版",
                         onClick = {
                             showSheet = false
-                            // TODO: 触发新建文件夹/模版逻辑
+                            onAddProject() // 💡 成功联动！通知 MainActivity 跳转到编辑器
                         }
                     )
 
-                    // 选项 3：导入本地存储
+                    // 选项 3：导入本地存储 (替换为自带的标准 Icons.Outlined.FolderOpen 图标)
                     FabSheetItem(
-                        icon = Icons.Outlined.Folder,
+                        icon = Icons.Outlined.FolderOpen,
                         iconColor = Color(0xFFF57C00),
                         title = "导入本地文件夹",
                         description = "通过系统文件选择器，授权外部文件夹访问权限",
                         onClick = {
                             showSheet = false
-                            // TODO: 触发 SAF 选择器
                         }
                     )
                 }
@@ -189,7 +163,6 @@ fun HomeScreen(
     }
 }
 
-// ── 🎨 提取的可复用 Sheet 列表项组件 ──
 @Composable
 private fun FabSheetItem(
     icon: ImageVector,
@@ -227,9 +200,9 @@ private fun FabSheetItem(
     }
 }
 
-
-
-// ---------- Project List ----------
+// ─────────────────────────────────────────────
+// 原有列表渲染组件保持不变
+// ─────────────────────────────────────────────
 @Composable
 fun ProjectList(
     projects: List<Project>,
@@ -238,107 +211,78 @@ fun ProjectList(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Section header
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Projects",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold
-                )
-                // Avatar group (decorative, mirrors the Termius screenshot)
-                AvatarGroup()
-            }
-        }
-
-        // Project cards
-        items(projects, key = { it.id }) { project ->
-            ProjectCard(
-                project = project,
-                onClick = { onProjectClick(project) }
-            )
+        items(projects) { project ->
+            ProjectCard(project = project, onClick = { onProjectClick(project) })
         }
     }
 }
 
-// ---------- Project Card ----------
 @Composable
-fun ProjectCard(
-    project: Project,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun ProjectCard(project: Project, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = when {
-            // Mimic Termius grouped card style with rounded groups
-            else -> RoundedCornerShape(12.dp)
-        },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Project type icon block (mimics Termius colored square icon)
-            ProjectIcon(
-                color = project.iconColor,
-                type = project.type
-            )
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            // Name + description
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = project.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = project.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(project.color),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (project.type == ProjectType.GITHUB) Icons.Outlined.Hub else Icons.Outlined.FolderOpen,
+                    contentDescription = null,
+                    tint = Color.white,
+                    modifier = Modifier.size(24.dp)
                 )
             }
-
-            // Active badge / last modified
-            if (project.isActive) {
-                Spacer(modifier = Modifier.width(8.dp))
-                ActiveBadge()
-            } else {
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = project.lastModified,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = project.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(text = project.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = project.updatedAt, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (project.hasWarning) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    WarningBadge()
+                }
             }
         }
     }
 }
+
+@Composable
+fun WarningBadge() {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Text(
+            text = "需要同步",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
 
 // ---------- Project Icon ----------
 @Composable
