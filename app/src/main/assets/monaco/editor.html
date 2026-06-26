@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #0D0D0D;
+      position: relative;
+    }
+    #editor {
+      width: 100%; height: 100%;
+      min-height: 100px;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+    }
+    /* 离线时的错误提示 */
+    #error-msg {
+      display: none;
+      position: fixed; inset: 0;
+      background: #1e1e1e; color: #f48771;
+      font-family: monospace; font-size: 14px;
+      padding: 32px; line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+<div id="editor"></div>
+<div id="error-msg"></div>
+
+<!--
+  ════════════════════════════════════════════════════════════════
+  离线使用方式（推荐）：
+    1. 从 https://github.com/microsoft/monaco-editor/releases
+       下载 monaco-editor-x.x.x.tgz
+    2. 解压后将 package/min/vs/ 整个文件夹
+       放入 app/src/main/assets/monaco/vs/
+    3. 本页已使用相对路径 'vs'，无需修改任何代码
+
+  开发阶段（需联网）：
+    将下面 require.config 中的 'vs' 改为 CDN 路径：
+    'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs'
+  ════════════════════════════════════════════════════════════════
+-->
+<script src="vs/loader.js" onerror="onLoaderError()"></script>
+<script>
+function onLoaderError() {
+  document.getElementById('error-msg').style.display = 'block';
+  document.getElementById('error-msg').innerText =
+    'Monaco 资源未找到。\n\n请下载 Monaco Editor 并放置到:\nassets/monaco/vs/\n\n';
+  if (typeof AndroidBridge !== 'undefined') {
+    AndroidBridge.onError('Monaco loader not found. Place monaco/vs/ in assets.');
+  }
+}
+
+if (typeof require !== 'undefined') {
+  require.config({ paths: { vs: 'vs' } });
+
+  require(['vs/editor/editor.main'], function () {
+    // editor.main.js 会异步注入 CSS，等样式就绪后再初始化，避免首帧空白
+    var cssLink = document.querySelector('link[href*="editor.main.css"]');
+    if (cssLink && !cssLink.sheet) {
+      cssLink.addEventListener('load', initEditor);
+      cssLink.addEventListener('error', initEditor);
+    } else {
+      initEditor();
+    }
+  });
+}
+
+/** Android WebView file:// 下用 Blob Worker，覆盖 editor.main 内置的 Worker 配置 */
+function installAndroidWorkerEnv() {
+  var workerFiles = {
+    json: 'vs/assets/json.worker-CvNsV1ln.js',
+    css: 'vs/assets/css.worker-CgWp-mpq.js',
+    html: 'vs/assets/html.worker-Dp8eKPfv.js',
+    ts: 'vs/assets/ts.worker-ClNbeHrN.js',
+    editor: 'vs/assets/editor.worker-DbHNojjm.js'
+  };
+
+  function loadWorkerBlob(path) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', path, false);
+    xhr.send(null);
+    if (xhr.status !== 0 && (xhr.status < 200 || xhr.status >= 300)) {
+      throw new Error('Worker XHR failed: ' + path + ' status=' + xhr.status);
+    }
+    var blob = new Blob([xhr.responseText], { type: 'application/javascript' });
+    return new Worker(URL.createObjectURL(blob));
+  }
+
+  globalThis.MonacoEnvironment = {
+    getWorker: function (_moduleId, label) {
+      var path = workerFiles.editor;
+      if (label === 'json') path = workerFiles.json;
+      else if (label === 'css' || label === 'scss' || label === 'less') path = workerFiles.css;
+      else if (label === 'html' || label === 'handlebars' || label === 'razor') path = workerFiles.html;
+      else if (label === 'typescript' || label === 'javascript') path = workerFiles.ts;
+      try {
+        return loadWorkerBlob(path);
+      } catch (e) {
+        console.error('Monaco Worker 加载失败:', label, e);
+        throw e;
+      }
+    }
+  };
+}
+
+/** 强制触发布局（Android WebView 中 ResizeObserver 可能不触发） */
+function layoutEditor() {
+  if (!window.editor) return;
+  var el = document.getElementById('editor');
+  if (!el) return;
+  var w = el.clientWidth || window.innerWidth;
+  var h = el.clientHeight || window.innerHeight;
+  if (w > 0 && h > 0) {
+    window.editor.layout({ width: w, height: h });
+  }
+}
+
+function scheduleLayout() {
+  requestAnimationFrame(function () {
+    layoutEditor();
+    setTimeout(layoutEditor, 50);
+    setTimeout(layoutEditor, 200);
+  });
+}
+
+var _layoutPollId = null;
+function startLayoutPolling() {
+  if (_layoutPollId) return;
+  var lastW = 0, lastH = 0;
+  _layoutPollId = setInterval(function () {
+    var el = document.getElementById('editor');
+    if (!el || !window.editor) return;
+    var w = el.clientWidth, h = el.clientHeight;
+    if (w > 0 && h > 0 && (w !== lastW || h !== lastH)) {
+      lastW = w; lastH = h;
+      layoutEditor();
+    }
+  }, 300);
+}
+
+function initEditor() {
+  installAndroidWorkerEnv();
+  window.monaco = monaco;
+
+  // ── 自定义 OLED 深色主题，匹配 ScriptHub 风格 ─────────────────
+  monaco.editor.defineTheme('scripthub-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment',    foreground: '6A9955', fontStyle: 'italic' },
+      { token: 'keyword',    foreground: 'C586C0' },
+      { token: 'string',     foreground: 'CE9178' },
+      { token: 'number',     foreground: 'B5CEA8' },
+      { token: 'type',       foreground: '4EC9B0' },
+      { token: 'function',   foreground: 'DCDCAA' },
+      { token: 'variable',   foreground: '9CDCFE' },
+      { token: 'operator',   foreground: 'D4D4D4' },
+    ],
+    colors: {
+      'editor.background':           '#0D0D0D',
+      'editor.foreground':           '#D4D4D4',
+      'editor.lineHighlightBackground': '#1A1A1A',
+      'editor.selectionBackground':  '#264F78',
+      'editorLineNumber.foreground': '#3C3C3C',
+      'editorLineNumber.activeForeground': '#858585',
+      'editorCursor.foreground':     '#4FC3F7',
+      'editorIndentGuide.background1': '#1E1E1E',
+      'editorWidget.background':     '#1E1E1E',
+      'editorSuggestWidget.background': '#1E1E1E',
+      'editorSuggestWidget.border':  '#454545',
+      'editorSuggestWidget.selectedBackground': '#094771',
+    }
+  });
+
+  monaco.editor.defineTheme('scripthub-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#FAFAFA',
+    }
+  });
+
+  window.editor = monaco.editor.create(document.getElementById('editor'), {
+    value:      '',
+    language:   'plaintext',
+    theme:      'scripthub-dark',
+    fontSize:   13,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+    lineNumbers: 'on',
+    minimap:    { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    domReadOnly: true,
+    readOnly: false,
+    wordWrap:   'off',
+    tabSize:    4,
+    insertSpaces: true,
+    renderWhitespace: 'selection',
+    renderLineHighlight: 'line',
+    cursorBlinking: 'blink',
+    cursorWidth: 2,
+    smoothScrolling: true,
+    // 移动端优化
+    contextmenu:           false,   // 禁用右键菜单（移动端无用）
+    fixedOverflowWidgets:  true,
+    mouseWheelZoom:        false,
+    selectionHighlight:    true,
+    occurrencesHighlight:  'off',
+    codeLens:              false,
+    lightbulb:             { enabled: 'off' },
+    // 补全配置
+    quickSuggestions: {
+      other:    true,
+      comments: false,
+      strings:  false
+    },
+    suggestOnTriggerCharacters: true,
+    acceptSuggestionOnEnter: 'on',
+    tabCompletion: 'on',
+    suggest: {
+      showMethods:    true,
+      showFunctions:  true,
+      showVariables:  true,
+      showWords:      true,
+      showKeywords:   true,
+    }
+  });
+
+  // ── 自定义语言补全提供器（Python / Shell 等无内置 Worker 的语言）───
+  registerLanguageCompletions();
+
+  // ── 内容变化 → 只回传统计数据（不回传全文，性能友好）─────────────
+  window.editor.onDidChangeModelContent(function () {
+    var model = window.editor.getModel();
+    AndroidBridge.onStatsChanged(model.getLineCount(), model.getValueLength());
+  });
+
+  // ── 光标移动 ─────────────────────────────────────────────────────
+  window.editor.onDidChangeCursorPosition(function (e) {
+    AndroidBridge.onCursorChanged(e.position.lineNumber, e.position.column);
+    reportCursorLayout();
+  });
+
+  window.editor.onDidScrollChange(function () {
+    reportCursorLayout();
+  });
+
+  window.editor.onDidLayoutChange(function () {
+    reportCursorLayout();
+  });
+
+  lockEditorInput();
+
+  // ── 选区变化 → 通知 Kotlin，用于显示剪切/复制/粘贴工具栏 ────────
+  window.editor.onDidChangeCursorSelection(function () {
+    var selection = window.editor.getSelection();
+    var hasSelection = !selection.isEmpty();
+    var b64 = '';
+    if (hasSelection) {
+      try {
+        var text = window.editor.getModel().getValueInRange(selection);
+        b64 = btoa(unescape(encodeURIComponent(text)));
+      } catch (e) { b64 = ''; }
+    }
+    AndroidBridge.onSelectionChanged(hasSelection, b64);
+    reportCursorLayout();
+  });
+
+  scheduleLayout();
+  startLayoutPolling();
+
+  // ── 编辑器就绪（布局完成后再通知 Kotlin）────────────────────────
+  scheduleLayout();
+  setTimeout(function () {
+    layoutEditor();
+    reportCursorLayout();
+    AndroidBridge.onReady();
+  }, 0);
+}
+
+/** 将光标/选区锚点转为编辑器容器内的像素坐标，供 Kotlin 感知选区状态 */
+function reportCursorLayout() {
+  if (!window.editor) return;
+  try {
+    var selection = window.editor.getSelection();
+    var pos = selection.getStartPosition();
+    var coords = window.editor.getScrolledVisiblePosition(pos);
+    if (!coords) {
+      AndroidBridge.onCursorLayout(0, 0, 0, false);
+      return;
+    }
+    var layout = window.editor.getLayoutInfo();
+    var x = layout.contentLeft + coords.left;
+    var y = coords.top;
+    var h = Math.max(coords.height, 14);
+    AndroidBridge.onCursorLayout(Math.round(x), Math.round(y), Math.round(h), true);
+  } catch (e) {
+    try { AndroidBridge.onCursorLayout(0, 0, 0, false); } catch (err) {}
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Kotlin → JS 调用 API（通过 WebView.evaluateJavascript 调用）
+// ════════════════════════════════════════════════════════════════
+
+/** 设置内容（Base64 编码，安全处理任意字符）*/
+function setContent(base64) {
+  try {
+    var content = decodeURIComponent(escape(atob(base64)));
+    // 保留撤销历史：用 pushEditOperations 替代 setValue
+    var model = window.editor.getModel();
+    var fullRange = model.getFullModelRange();
+    window.editor.pushUndoStop();
+    model.pushEditOperations([], [{
+      range: fullRange,
+      text: content
+    }], function () { return null; });
+    window.editor.pushUndoStop();
+    // 滚动到顶部
+    window.editor.setPosition({ lineNumber: 1, column: 1 });
+    window.editor.revealLine(1);
+    scheduleLayout();
+  } catch (e) {
+    console.error('setContent error', e);
+  }
+}
+
+/** 获取内容（返回 Base64，供 evaluateJavascript callback 读取）*/
+function getContentBase64() {
+  try {
+    return btoa(unescape(encodeURIComponent(window.editor.getValue())));
+  } catch (e) {
+    return '';
+  }
+}
+
+/** 设置语言 */
+function setLanguage(lang) {
+  monaco.editor.setModelLanguage(window.editor.getModel(), lang);
+}
+
+/** 设置主题：'scripthub-dark' | 'scripthub-light' | 'vs-dark' | 'vs' */
+function setTheme(theme) {
+  monaco.editor.setTheme(theme);
+  document.body.style.background =
+    (theme === 'scripthub-light' || theme === 'vs') ? '#FAFAFA' : '#0D0D0D';
+}
+
+/** 在光标处插入文字（代码键盘调用，使用 executeEdits 避免焦点丢失问题）*/
+function typeText(base64) {
+  try {
+    var text = decodeURIComponent(escape(atob(base64)));
+    var selection = window.editor.getSelection();
+    window.editor.executeEdits('codekey', [{
+      range: selection,
+      text: text,
+      forceMoveMarkers: true
+    }]);
+    // 将光标移到插入内容之后
+    var model = window.editor.getModel();
+    var newOffset = model.getOffsetAt(selection.getStartPosition()) + text.length;
+    var newPos = model.getPositionAt(newOffset);
+    window.editor.setPosition(newPos);
+  } catch (e) {
+    console.error('typeText error', e);
+  }
+}
+
+/** 删除当前选区（用于剪切操作） */
+function deleteSelection() {
+  var selection = window.editor.getSelection();
+  if (!selection.isEmpty()) {
+    window.editor.executeEdits('cut', [{ range: selection, text: '', forceMoveMarkers: true }]);
+  }
+}
+
+/** 全选 */
+function selectAllText() {
+  var model = window.editor.getModel();
+  window.editor.setSelection(model.getFullModelRange());
+}
+
+function _currentLineRange() {
+  var model = window.editor.getModel();
+  var line = window.editor.getPosition().lineNumber;
+  return new monaco.Range(line, 1, line, model.getLineMaxColumn(line));
+}
+
+function getCurrentLineBase64() {
+  try {
+    var text = window.editor.getModel().getValueInRange(_currentLineRange());
+    return btoa(unescape(encodeURIComponent(text)));
+  } catch (e) { return ''; }
+}
+
+function cutCurrentLineBase64() {
+  try {
+    var range = _currentLineRange();
+    var model = window.editor.getModel();
+    var text = model.getValueInRange(range);
+    deleteCurrentLine();
+    return btoa(unescape(encodeURIComponent(text)));
+  } catch (e) { return ''; }
+}
+
+function deleteCurrentLine() {
+  if (!window.editor) return;
+  var model = window.editor.getModel();
+  var line = window.editor.getPosition().lineNumber;
+  var lineCount = model.getLineCount();
+  if (lineCount <= 1) {
+    window.editor.executeEdits('deleteLine', [{
+      range: model.getFullModelRange(),
+      text: ''
+    }]);
+    return;
+  }
+  if (line >= lineCount) {
+    window.editor.executeEdits('deleteLine', [{
+      range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
+      text: ''
+    }]);
+  } else {
+    window.editor.executeEdits('deleteLine', [{
+      range: new monaco.Range(line, 1, line + 1, 1),
+      text: ''
+    }]);
+  }
+}
+
+function clearCurrentLine() {
+  if (!window.editor) return;
+  window.editor.executeEdits('clearLine', [{
+    range: _currentLineRange(),
+    text: ''
+  }]);
+}
+
+function clearAllContent() {
+  if (!window.editor) return;
+  var model = window.editor.getModel();
+  window.editor.pushUndoStop();
+  model.pushEditOperations([], [{
+    range: model.getFullModelRange(),
+    text: ''
+  }], function () { return null; });
+  window.editor.pushUndoStop();
+  window.editor.setPosition({ lineNumber: 1, column: 1 });
+}
+
+function formatDocument() {
+  if (!window.editor) return;
+  window.editor.getAction('editor.action.formatDocument').run();
+}
+
+function toggleComment() {
+  if (!window.editor) return;
+  window.editor.getAction('editor.action.commentLine').run();
+}
+
+function _decodeB64(base64) {
+  return decodeURIComponent(escape(atob(base64)));
+}
+
+function findNextText(base64Query) {
+  try {
+    var query = _decodeB64(base64Query);
+    if (!query) return '0';
+    var model = window.editor.getModel();
+    var pos = window.editor.getSelection().getEndPosition();
+    var match = model.findNextMatch(query, pos, false, false, null, false);
+    if (!match) {
+      match = model.findNextMatch(query, { lineNumber: 1, column: 1 }, false, false, null, false);
+    }
+    if (match) {
+      window.editor.setSelection(match.range);
+      window.editor.revealRangeInCenter(match.range);
+      return '1';
+    }
+  } catch (e) {}
+  return '0';
+}
+
+function findPreviousText(base64Query) {
+  try {
+    var query = _decodeB64(base64Query);
+    if (!query) return '0';
+    var model = window.editor.getModel();
+    var pos = window.editor.getSelection().getStartPosition();
+    var match = model.findPreviousMatch(query, pos, false, false, null, false);
+    if (!match) {
+      var lastLine = model.getLineCount();
+      match = model.findPreviousMatch(
+        query,
+        { lineNumber: lastLine, column: model.getLineMaxColumn(lastLine) },
+        false, false, null, false
+      );
+    }
+    if (match) {
+      window.editor.setSelection(match.range);
+      window.editor.revealRangeInCenter(match.range);
+      return '1';
+    }
+  } catch (e) {}
+  return '0';
+}
+
+function replaceOneText(base64Find, base64Replace) {
+  try {
+    var find = _decodeB64(base64Find);
+    var replace = _decodeB64(base64Replace);
+    if (!find) return '0';
+    var model = window.editor.getModel();
+    var selection = window.editor.getSelection();
+    var selected = model.getValueInRange(selection);
+    var count = 0;
+    if (selected === find) {
+      window.editor.executeEdits('replace', [{
+        range: selection,
+        text: replace,
+        forceMoveMarkers: true
+      }]);
+      count = 1;
+    }
+    findNextText(base64Find);
+    return String(count);
+  } catch (e) { return '0'; }
+}
+
+function replaceAllText(base64Find, base64Replace) {
+  try {
+    var find = _decodeB64(base64Find);
+    var replace = _decodeB64(base64Replace);
+    if (!find) return '0';
+    var model = window.editor.getModel();
+    var matches = model.findMatches(find, false, false, false, null, false);
+    if (!matches.length) return '0';
+    window.editor.executeEdits('replaceAll', matches.map(function (m) {
+      return { range: m.range, text: replace, forceMoveMarkers: true };
+    }));
+    return String(matches.length);
+  } catch (e) { return '0'; }
+}
+
+/** 撤销 */
+function editorUndo() {
+  window.editor.trigger('keyboard', 'undo', null);
+}
+
+/** 重做 */
+function editorRedo() {
+  window.editor.trigger('keyboard', 'redo', null);
+}
+
+/** 光标移动：left | right | up | down
+ *  有选区时扩展/收缩选区（移动终点）；无选区时普通移动光标 */
+function moveCursor(direction) {
+  var hasSelection = window.editor && !window.editor.getSelection().isEmpty();
+  var moveMap = {
+    left:  'cursorLeft',
+    right: 'cursorRight',
+    up:    'cursorUp',
+    down:  'cursorDown'
+  };
+  var selectMap = {
+    left:  'cursorLeftSelect',
+    right: 'cursorRightSelect',
+    up:    'cursorUpSelect',
+    down:  'cursorDownSelect'
+  };
+  var cmd = hasSelection ? selectMap[direction] : moveMap[direction];
+  if (cmd) {
+    window.editor.trigger('keyboard', cmd, null);
+  }
+}
+
+/** 在模型中移动一个位置（上下左右）*/
+function _movePos(model, pos, direction) {
+  var lineCount = model.getLineCount();
+  if (direction === 'left') {
+    var off = model.getOffsetAt(pos);
+    return off > 0 ? model.getPositionAt(off - 1) : pos;
+  } else if (direction === 'right') {
+    var off = model.getOffsetAt(pos);
+    var max = model.getValueLength();
+    return off < max ? model.getPositionAt(off + 1) : pos;
+  } else if (direction === 'up') {
+    if (pos.lineNumber > 1) {
+      var prevMax = model.getLineMaxColumn(pos.lineNumber - 1);
+      return { lineNumber: pos.lineNumber - 1, column: Math.min(pos.column, prevMax) };
+    }
+    return pos;
+  } else if (direction === 'down') {
+    if (pos.lineNumber < lineCount) {
+      var nextMax = model.getLineMaxColumn(pos.lineNumber + 1);
+      return { lineNumber: pos.lineNumber + 1, column: Math.min(pos.column, nextMax) };
+    }
+    return pos;
+  }
+  return pos;
+}
+
+/** 调整选区起点（左手柄），终点固定 */
+function adjustSelectionStart(direction) {
+  if (!window.editor) return;
+  var sel = window.editor.getSelection();
+  if (sel.isEmpty()) return;
+  var model = window.editor.getModel();
+  var startPos = { lineNumber: sel.startLineNumber, column: sel.startColumn };
+  var endPos   = { lineNumber: sel.endLineNumber,   column: sel.endColumn   };
+  var newStart = _movePos(model, startPos, direction);
+  var newStartOff = model.getOffsetAt(newStart);
+  var endOff      = model.getOffsetAt(endPos);
+  if (newStartOff >= endOff) return;
+  window.editor.setSelection({
+    selectionStartLineNumber: endPos.lineNumber,
+    selectionStartColumn:     endPos.column,
+    positionLineNumber:       newStart.lineNumber,
+    positionColumn:           newStart.column
+  });
+}
+
+/** 调整选区终点（右手柄），起点固定 */
+function adjustSelectionEnd(direction) {
+  if (!window.editor) return;
+  var sel = window.editor.getSelection();
+  if (sel.isEmpty()) return;
+  var model = window.editor.getModel();
+  var startPos = { lineNumber: sel.startLineNumber, column: sel.startColumn };
+  var endPos   = { lineNumber: sel.endLineNumber,   column: sel.endColumn   };
+  var newEnd    = _movePos(model, endPos, direction);
+  var startOff  = model.getOffsetAt(startPos);
+  var newEndOff = model.getOffsetAt(newEnd);
+  if (newEndOff <= startOff) return;
+  window.editor.setSelection({
+    selectionStartLineNumber: startPos.lineNumber,
+    selectionStartColumn:     startPos.column,
+    positionLineNumber:       newEnd.lineNumber,
+    positionColumn:           newEnd.column
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// 自定义补全提供器（为没有内置 Worker 的语言提供关键字/内置函数提示）
+// ════════════════════════════════════════════════════════════════
+
+function registerLanguageCompletions() {
+
+  // ── 工具：把字符串列表转成 CompletionItem 数组 ──────────────────
+  function makeItems(words, kind, detail, range) {
+    return words.map(function (w) {
+      return {
+        label: w,
+        kind: kind,
+        detail: detail,
+        insertText: w,
+        range: range
+      };
+    });
+  }
+
+  // ── 工具：把代码片段列表转成 CompletionItem 数组 ─────────────────
+  function makeSnippets(snippets, range) {
+    return snippets.map(function (s) {
+      return {
+        label: s.label,
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        detail: s.detail || 'snippet',
+        insertText: s.insert,
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        documentation: s.doc || '',
+        range: range
+      };
+    });
+  }
+
+  // ── 通用：从文档中提取已有单词作为补全候选 ──────────────────────
+  function getDocumentWords(model, currentWord) {
+    var text = model.getValue();
+    var wordRe = /[a-zA-Z_]\w*/g;
+    var seen = {};
+    var result = [];
+    var m;
+    while ((m = wordRe.exec(text)) !== null) {
+      var w = m[0];
+      if (w !== currentWord && !seen[w]) {
+        seen[w] = true;
+        result.push(w);
+      }
+    }
+    return result;
+  }
+
+  // ════ Python ════════════════════════════════════════════════════
+  var PY_KEYWORDS = [
+    'False','None','True','and','as','assert','async','await',
+    'break','class','continue','def','del','elif','else','except',
+    'finally','for','from','global','if','import','in','is',
+    'lambda','nonlocal','not','or','pass','raise','return',
+    'try','while','with','yield'
+  ];
+
+  var PY_BUILTINS = [
+    'abs','all','any','ascii','bin','bool','breakpoint','bytearray',
+    'bytes','callable','chr','classmethod','compile','complex',
+    'copyright','credits','delattr','dict','dir','divmod','enumerate',
+    'eval','exec','exit','filter','float','format','frozenset',
+    'getattr','globals','hasattr','hash','help','hex','id','input',
+    'int','isinstance','issubclass','iter','len','license','list',
+    'locals','map','max','memoryview','min','next','object','oct',
+    'open','ord','pow','print','property','quit','range','repr',
+    'reversed','round','set','setattr','slice','sorted','staticmethod',
+    'str','sum','super','tuple','type','vars','zip',
+    '__import__','__name__','__file__','__doc__','__package__'
+  ];
+
+  var PY_COMMON_MODULES = [
+    'os','sys','re','math','json','time','datetime','collections',
+    'itertools','functools','pathlib','subprocess','threading',
+    'multiprocessing','socket','http','urllib','requests','logging',
+    'unittest','typing','dataclasses','abc','io','copy','random',
+    'hashlib','base64','struct','pickle','csv','sqlite3','argparse',
+    'shutil','glob','fnmatch','tempfile','traceback','inspect',
+    'contextlib','enum','queue','signal','platform','gc','weakref'
+  ];
+
+  var PY_SNIPPETS = [
+    { label: 'def',    detail: 'function definition',
+      insert: 'def ${1:function_name}(${2:args}):\n    ${3:pass}',
+      doc: 'Define a function' },
+    { label: 'class',  detail: 'class definition',
+      insert: 'class ${1:ClassName}(${2:object}):\n    def __init__(self${3:}):\n        ${4:pass}',
+      doc: 'Define a class' },
+    { label: 'if',     detail: 'if statement',
+      insert: 'if ${1:condition}:\n    ${2:pass}' },
+    { label: 'ifelse', detail: 'if-else statement',
+      insert: 'if ${1:condition}:\n    ${2:pass}\nelse:\n    ${3:pass}' },
+    { label: 'for',    detail: 'for loop',
+      insert: 'for ${1:item} in ${2:iterable}:\n    ${3:pass}' },
+    { label: 'while',  detail: 'while loop',
+      insert: 'while ${1:condition}:\n    ${2:pass}' },
+    { label: 'try',    detail: 'try-except block',
+      insert: 'try:\n    ${1:pass}\nexcept ${2:Exception} as ${3:e}:\n    ${4:pass}' },
+    { label: 'with',   detail: 'with statement',
+      insert: 'with ${1:expression} as ${2:var}:\n    ${3:pass}' },
+    { label: 'import', detail: 'import module',
+      insert: 'import ${1:module}' },
+    { label: 'from',   detail: 'from import',
+      insert: 'from ${1:module} import ${2:name}' },
+    { label: 'lambda', detail: 'lambda function',
+      insert: 'lambda ${1:args}: ${2:expression}' },
+    { label: 'print',  detail: 'print()',
+      insert: 'print(${1:value})' },
+    { label: 'list',   detail: 'list comprehension',
+      insert: '[${1:expr} for ${2:item} in ${3:iterable}]' },
+    { label: 'dict',   detail: 'dict comprehension',
+      insert: '{${1:k}: ${2:v} for ${3:k}, ${4:v} in ${5:iterable}.items()}' },
+    { label: 'open',   detail: 'open file',
+      insert: 'with open(${1:"file.txt"}, ${2:"r"}) as ${3:f}:\n    ${4:content} = ${3:f}.read()' },
+    { label: 'main',   detail: '__main__ guard',
+      insert: 'if __name__ == "__main__":\n    ${1:main()}' },
+    { label: 'argparse', detail: 'argparse boilerplate',
+      insert: 'import argparse\nparser = argparse.ArgumentParser(description="${1:}")\nparser.add_argument("${2:arg}")\nargs = parser.parse_args()' },
+    { label: 'dataclass', detail: 'dataclass definition',
+      insert: 'from dataclasses import dataclass\n\n@dataclass\nclass ${1:MyClass}:\n    ${2:field}: ${3:str}' },
+  ];
+
+  monaco.languages.registerCompletionItemProvider('python', {
+    triggerCharacters: ['.', '(', ' ', '\t'],
+    provideCompletionItems: function (model, position) {
+      var word = model.getWordUntilPosition(position);
+      var range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber:   position.lineNumber,
+        startColumn:     word.startColumn,
+        endColumn:       word.endColumn
+      };
+      var K = monaco.languages.CompletionItemKind;
+      var items = [].concat(
+        makeItems(PY_KEYWORDS,       K.Keyword,   'keyword',        range),
+        makeItems(PY_BUILTINS,       K.Function,  'built-in',       range),
+        makeItems(PY_COMMON_MODULES, K.Module,    'module',         range),
+        makeSnippets(PY_SNIPPETS, range)
+      );
+      var docWords = getDocumentWords(model, word.word);
+      docWords.forEach(function (w) {
+        items.push({ label: w, kind: K.Text, detail: 'word', insertText: w, range: range });
+      });
+      return { suggestions: items };
+    }
+  });
+
+  // ════ Shell / Bash ══════════════════════════════════════════════
+  var SH_KEYWORDS = [
+    'if','then','else','elif','fi','for','in','do','done',
+    'while','until','case','esac','function','return','exit',
+    'break','continue','local','declare','readonly','export',
+    'unset','shift','source','trap','wait','jobs','bg','fg',
+    'select','time','coproc'
+  ];
+
+  var SH_BUILTINS = [
+    'echo','printf','read','test','[','[[','cd','pwd','ls','cp',
+    'mv','rm','mkdir','rmdir','touch','cat','head','tail','grep',
+    'sed','awk','cut','sort','uniq','wc','tr','find','xargs',
+    'chmod','chown','chgrp','ln','diff','patch','tar','gzip',
+    'gunzip','zip','unzip','curl','wget','ssh','scp','rsync',
+    'ps','top','kill','pkill','pgrep','nohup','sleep','date',
+    'basename','dirname','realpath','which','type','hash',
+    'env','set','export','eval','exec','true','false','alias',
+    'history','pushd','popd','dirs','let','expr','bc','tee',
+    'xdg-open','open','clear','reset','stty'
+  ];
+
+  var SH_VARS = [
+    '$0','$1','$2','$3','$@','$*','$#','$?','$$','$!','$-',
+    '$HOME','$PATH','$USER','$SHELL','$PWD','$OLDPWD','$IFS',
+    '$RANDOM','$LINENO','$BASH_VERSION','$OSTYPE','$HOSTNAME',
+    '$TERM','$EDITOR','$LANG','$TZ'
+  ];
+
+  var SH_SNIPPETS = [
+    { label: 'shebang', detail: 'bash shebang line',
+      insert: '#!/usr/bin/env bash\nset -euo pipefail\n${1:}' },
+    { label: 'if',   detail: 'if statement',
+      insert: 'if ${1:[ condition ]}; then\n    ${2:}\nfi' },
+    { label: 'ifel', detail: 'if-else statement',
+      insert: 'if ${1:[ condition ]}; then\n    ${2:}\nelse\n    ${3:}\nfi' },
+    { label: 'for',  detail: 'for loop',
+      insert: 'for ${1:item} in ${2:list}; do\n    ${3:}\ndone' },
+    { label: 'while',detail: 'while loop',
+      insert: 'while ${1:[ condition ]}; do\n    ${2:}\ndone' },
+    { label: 'case', detail: 'case statement',
+      insert: 'case ${1:var} in\n    ${2:pattern})\n        ${3:};;\n    *)\n        ${4:};;\nesac' },
+    { label: 'func', detail: 'function definition',
+      insert: '${1:function_name}() {\n    ${2:}\n}' },
+    { label: 'read', detail: 'read user input',
+      insert: 'read -r -p "${1:Prompt: }" ${2:var}' },
+    { label: 'trap', detail: 'trap signal',
+      insert: 'trap \'${1:cleanup}\' ${2:EXIT INT TERM}' },
+    { label: 'arr',  detail: 'array declaration',
+      insert: '${1:arr}=(${2:"a" "b" "c"})' },
+    { label: 'log',  detail: 'log to stderr',
+      insert: 'echo "[$(date +%T)] ${1:message}" >&2' },
+    { label: 'die',  detail: 'print error and exit',
+      insert: 'die() { echo "ERROR: $*" >&2; exit 1; }\n' },
+    { label: 'check_cmd', detail: 'check command exists',
+      insert: 'command -v ${1:cmd} &>/dev/null || { echo "${1:cmd} not found"; exit 1; }' },
+    { label: 'getopts', detail: 'getopts option parsing',
+      insert: 'while getopts ":${1:h}:" opt; do\n  case $opt in\n    h) ${2:usage}; exit 0;;\n    \\?) echo "Unknown option: -$OPTARG"; exit 1;;\n  esac\ndone' },
+  ];
+
+  monaco.languages.registerCompletionItemProvider('shell', {
+    triggerCharacters: ['$', ' ', '\t', '-', '/'],
+    provideCompletionItems: function (model, position) {
+      var word = model.getWordUntilPosition(position);
+      var range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber:   position.lineNumber,
+        startColumn:     word.startColumn,
+        endColumn:       word.endColumn
+      };
+      var K = monaco.languages.CompletionItemKind;
+      var items = [].concat(
+        makeItems(SH_KEYWORDS, K.Keyword,  'keyword',  range),
+        makeItems(SH_BUILTINS, K.Function, 'command',  range),
+        makeItems(SH_VARS,     K.Variable, 'variable', range),
+        makeSnippets(SH_SNIPPETS, range)
+      );
+      var docWords = getDocumentWords(model, word.word);
+      docWords.forEach(function (w) {
+        items.push({ label: w, kind: K.Text, detail: 'word', insertText: w, range: range });
+      });
+      return { suggestions: items };
+    }
+  });
+
+  // ════ 其余语言：通用"文档内词汇 + 关键字"兜底补全 ════════════════
+  var LANG_KEYWORDS = {
+    kotlin: ['fun','val','var','class','object','interface','if','else','when',
+             'for','while','do','return','break','continue','throw','try','catch',
+             'finally','import','package','is','as','in','out','by','companion',
+             'override','open','abstract','sealed','data','enum','typealias',
+             'suspend','coroutineScope','launch','async','await','let','run',
+             'also','apply','with','it','this','super','null','true','false'],
+    java:   ['abstract','assert','boolean','break','byte','case','catch','char',
+             'class','const','continue','default','do','double','else','enum',
+             'extends','final','finally','float','for','goto','if','implements',
+             'import','instanceof','int','interface','long','native','new',
+             'package','private','protected','public','return','short','static',
+             'strictfp','super','switch','synchronized','this','throw','throws',
+             'transient','try','void','volatile','while','true','false','null'],
+    cpp:    ['auto','break','case','char','class','const','continue','default',
+             'delete','do','double','else','enum','extern','false','float','for',
+             'friend','goto','if','inline','int','long','namespace','new',
+             'nullptr','operator','private','protected','public','return','short',
+             'signed','sizeof','static','struct','switch','template','this',
+             'throw','true','try','typedef','typeid','typename','union',
+             'unsigned','using','virtual','void','volatile','while','include',
+             'define','ifdef','ifndef','endif','pragma'],
+    rust:   ['as','async','await','break','const','continue','crate','dyn','else',
+             'enum','extern','false','fn','for','if','impl','in','let','loop',
+             'match','mod','move','mut','pub','ref','return','self','Self',
+             'static','struct','super','trait','true','type','union','unsafe',
+             'use','where','while'],
+    go:     ['break','case','chan','const','continue','default','defer','else',
+             'fallthrough','for','func','go','goto','if','import','interface',
+             'map','package','range','return','select','struct','switch','type',
+             'var','true','false','nil','append','cap','close','complex','copy',
+             'delete','imag','len','make','new','panic','print','println',
+             'real','recover'],
+    sql:    ['SELECT','FROM','WHERE','AND','OR','NOT','INSERT','INTO','VALUES',
+             'UPDATE','SET','DELETE','CREATE','TABLE','INDEX','VIEW','DROP',
+             'ALTER','ADD','COLUMN','PRIMARY','KEY','FOREIGN','REFERENCES',
+             'JOIN','LEFT','RIGHT','INNER','OUTER','FULL','ON','GROUP','BY',
+             'ORDER','HAVING','LIMIT','OFFSET','DISTINCT','AS','IN','EXISTS',
+             'LIKE','BETWEEN','IS','NULL','CASE','WHEN','THEN','ELSE','END',
+             'COUNT','SUM','AVG','MAX','MIN','COALESCE','IFNULL','CAST',
+             'UNION','ALL','WITH','RECURSIVE'],
+    lua:    ['and','break','do','else','elseif','end','false','for','function',
+             'goto','if','in','local','nil','not','or','repeat','return','then',
+             'true','until','while','print','tostring','tonumber','type',
+             'pairs','ipairs','next','select','unpack','table','string','math',
+             'io','os','coroutine','require','pcall','xpcall','error','assert'],
+  };
+
+  Object.keys(LANG_KEYWORDS).forEach(function (lang) {
+    var kws = LANG_KEYWORDS[lang];
+    monaco.languages.registerCompletionItemProvider(lang, {
+      provideCompletionItems: function (model, position) {
+        var word = model.getWordUntilPosition(position);
+        var range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber:   position.lineNumber,
+          startColumn:     word.startColumn,
+          endColumn:       word.endColumn
+        };
+        var K = monaco.languages.CompletionItemKind;
+        var items = makeItems(kws, K.Keyword, 'keyword', range);
+        var docWords = getDocumentWords(model, word.word);
+        docWords.forEach(function (w) {
+          items.push({ label: w, kind: K.Text, detail: 'word', insertText: w, range: range });
+        });
+        return { suggestions: items };
+      }
+    });
+  });
+}
+
+/** 是否已进入编辑模式（单击解锁后为 true，滑动浏览时重置） */
+var inputUnlocked = false;
+
+/** 锁定隐藏 textarea，防止滚动时系统自动弹出键盘 */
+function lockEditorInput() {
+  var input = document.querySelector('.monaco-editor textarea.inputarea');
+  if (input) {
+    input.setAttribute('readonly', 'readonly');
+    input.setAttribute('inputmode', 'none');
+  }
+}
+
+/** 用户点击后解锁输入 */
+function unlockEditorInput() {
+  var input = document.querySelector('.monaco-editor textarea.inputarea');
+  if (input) {
+    input.removeAttribute('readonly');
+    input.removeAttribute('inputmode');
+  }
+}
+
+function enableEditorInput() {
+  if (!window.editor) return;
+  inputUnlocked = true;
+  window.editor.updateOptions({ domReadOnly: false });
+  unlockEditorInput();
+}
+
+function dismissEditorInput() {
+  if (!window.editor) return;
+  inputUnlocked = false;
+  window.editor.updateOptions({ domReadOnly: true });
+  lockEditorInput();
+  try {
+    var input = document.querySelector('.monaco-editor textarea.inputarea');
+    if (input) input.blur();
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
+  } catch (e) {}
+  try { AndroidBridge.onEditorDismissed(); } catch (err) {}
+}
+
+/** 在触摸点聚焦并请求弹出系统键盘 */
+function focusForEditing(clientX, clientY) {
+  if (!window.editor) return;
+  enableEditorInput();
+  try {
+    var target = window.editor.getTargetAtClientPoint(clientX, clientY);
+    if (target && target.position) {
+      window.editor.setPosition(target.position);
+      window.editor.revealPositionInCenterIfOutsideViewport(target.position);
+    }
+  } catch (e) {}
+  window.editor.focus();
+  var input = document.querySelector('.monaco-editor textarea.inputarea');
+  if (input) input.focus();
+  AndroidBridge.onEditorTapped();
+}
+
+/** 聚焦编辑器（代码键盘按键后重新聚焦）*/
+function focusEditor() {
+  if (!window.editor) return;
+  enableEditorInput();
+  window.editor.focus();
+  var input = document.querySelector('.monaco-editor textarea.inputarea');
+  if (input) input.focus();
+  AndroidBridge.onEditorTapped();
+}
+
+// ════════════════════════════════════════════════════════════════
+// 移动端触摸增强
+// 双击  → 选中光标处单词
+// 长按（空编辑器）→ 在触摸点弹出工具栏
+// 拖选 → 完全交给 Monaco 原生处理，不拦截 touchmove
+// ════════════════════════════════════════════════════════════════
+(function installTouchHandlers() {
+  var TOUCH_SLOP     = 14;
+  var LONG_PRESS_MS  = 450;
+  var DOUBLE_TAP_MS  = 280;
+
+  var tapCount       = 0;
+  var tapTimer       = null;
+  var longTimer      = null;
+  var startX = 0, startY = 0;
+  var lastX = 0, lastY = 0;
+  var lastTouchX = 0, lastTouchY = 0;
+  var movedBeyondSlop = false;
+  var editorEl = null;
+
+  function getEditorEl() {
+    if (!editorEl) editorEl = document.getElementById('editor');
+    return editorEl;
+  }
+
+  function selectWordAt(x, y) {
+    if (!window.editor) return false;
+    try {
+      var target = window.editor.getTargetAtClientPoint(x, y);
+      if (!target || !target.position) return false;
+      var pos   = target.position;
+      var model = window.editor.getModel();
+      var word  = model.getWordAtPosition(pos);
+      if (word) {
+        window.editor.setSelection({
+          startLineNumber: pos.lineNumber, startColumn: word.startColumn,
+          endLineNumber:   pos.lineNumber, endColumn:   word.endColumn
+        });
+        window.editor.focus();
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function notifyLongPress(x, y) {
+    try {
+      var el = getEditorEl();
+      var rect = el ? el.getBoundingClientRect() : { left: 0, top: 0 };
+      AndroidBridge.onLongPressEmpty(Math.round(x - rect.left), Math.round(y - rect.top));
+    } catch (err) {}
+  }
+
+  function onTouchStart(e) {
+    if (e.touches.length !== 1) {
+      clearTimeout(longTimer);
+      return;
+    }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    lastX  = startX;
+    lastY  = startY;
+    lastTouchX = startX;
+    lastTouchY = startY;
+    movedBeyondSlop = false;
+    clearTimeout(longTimer);
+    if (!inputUnlocked) {
+      dismissEditorInput();
+    }
+
+    longTimer = setTimeout(function () {
+      if (movedBeyondSlop) return;
+      var model = window.editor ? window.editor.getModel() : null;
+      var isEmpty = !model || model.getValueLength() === 0;
+      if (isEmpty) {
+        notifyLongPress(lastX, lastY);
+      }
+    }, LONG_PRESS_MS);
+  }
+
+  function onTouchMove(e) {
+    if (e.touches.length !== 1) return;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+    lastTouchX = lastX;
+    lastTouchY = lastY;
+    var dx = e.touches[0].clientX - startX;
+    var dy = e.touches[0].clientY - startY;
+    if (dx * dx + dy * dy > TOUCH_SLOP * TOUCH_SLOP) {
+      movedBeyondSlop = true;
+      clearTimeout(longTimer);
+      // 已进入编辑模式（键盘已打开）时，滑动浏览不自动收起键盘
+      if (!inputUnlocked) {
+        dismissEditorInput();
+      }
+    }
+  }
+
+  function onTouchEnd(e) {
+    clearTimeout(longTimer);
+    if (movedBeyondSlop) return;
+
+    tapCount++;
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(function () {
+      var n = tapCount;
+      tapCount = 0;
+      if (n >= 2) {
+        selectWordAt(lastX, lastY);
+      } else if (n === 1) {
+        focusForEditing(lastX, lastY);
+      }
+    }, DOUBLE_TAP_MS);
+  }
+
+  function attach() {
+    var el = getEditorEl();
+    if (!el || el._touchHandlersAttached) return;
+    el._touchHandlersAttached = true;
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove',  onTouchMove,  { passive: true });
+    el.addEventListener('touchend',   onTouchEnd,   { passive: true });
+    el.addEventListener('touchcancel', function () {
+      clearTimeout(longTimer);
+      clearTimeout(tapTimer);
+      tapCount = 0;
+    }, { passive: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+  setTimeout(attach, 100);
+})();
+</script>
+</body>
+</html>
