@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        background: #282c34;
+      }
+      #editor {
+        height: 100vh;
+        font-size: 14px;
+      }
+
+      /* CodeMirror 滚动条美化 */
+      .cm-scroller {
+        overflow: auto !important;
+      }
+      .cm-editor {
+        height: 100%;
+      }
+      .cm-editor.cm-focused {
+        outline: none;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-D8o4RlBV.js"></script>
+  </head>
+  <body>
+    <div id="editor"></div>
+  </body>
+</html>
