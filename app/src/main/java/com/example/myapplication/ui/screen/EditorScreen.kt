@@ -192,7 +192,7 @@ fun EditorScreen(
                             ): Boolean = true
                         }
 
-                        loadUrl("file:///android_asset/editor/index.html")
+                        loadUrl("file:///android_asset/editor/src/index.html")
                     }
                 }
             )
