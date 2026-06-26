@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.myapplication.ui.model.Project
 import com.example.myapplication.ui.screen.EditorFile
 import com.example.myapplication.ui.screen.EditorScreen
@@ -36,10 +36,13 @@ sealed class Screen {
 @Composable
 fun AppNavigation() {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     when (val screen = currentScreen) {
         is Screen.Home -> {
             HomeScreen(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it },
                 onProjectClick = { project ->
                     currentScreen = Screen.Editor(
                         file = projectToEditorFile(project)
