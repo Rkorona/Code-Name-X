@@ -46,11 +46,10 @@ fun AppNavigation() {
                     )
                 },
                 onAddProject = {
-                    // 新建空文件直接进编辑器
                     currentScreen = Screen.Editor(
                         file = EditorFile(
                             name = "untitled.js",
-                            code = "",
+                            code = "// untitled.js\n// Start coding here...\n\n",
                             lang = "js"
                         )
                     )
