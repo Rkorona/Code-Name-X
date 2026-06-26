@@ -75,9 +75,22 @@
       parameterHints: { enabled: true }
     });
 
-    window.editor.onDidChangeModelContent(function () {
+    window.editor.onDidChangeModelContent(function (e) {
       var model = window.editor.getModel();
       AndroidBridge.onStatsChanged(model.getLineCount(), model.getValueLength());
+
+      // Android WebView 软键盘走 IME 输入，不触发 keydown，Monaco 收不到字符事件
+      // 因此每次内容变化时手动检测，若光标前是合法标识符字符则主动触发智能提示
+      try {
+        var pos = window.editor.getPosition();
+        if (pos && pos.column > 1) {
+          var lineContent = model.getLineContent(pos.lineNumber);
+          var charBefore = lineContent[pos.column - 2];
+          if (charBefore && /[\w$]/.test(charBefore)) {
+            window.editor.trigger('mobile-ime', 'editor.action.triggerSuggest', {});
+          }
+        }
+      } catch (_) {}
     });
 
     // 点击编辑区时通知 Kotlin 弹出系统软键盘（Android WebView 中 JS focus() 不会自动触发 IME）
