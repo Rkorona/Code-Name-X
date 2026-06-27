@@ -1,5 +1,7 @@
 package com.example.myapplication.ui.screen
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
@@ -97,7 +99,7 @@ class WebAppInterface(
 // ═════════════════════════════════════════════════════════════
 // 编辑器主页面 Composable
 // ═════════════════════════════════════════════════════════════
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) 
 @Composable
 fun EditorScreen(
     filePath: String, // 需要打开和编辑的文件绝对路径
@@ -229,7 +231,7 @@ fun EditorScreen(
     // ─────────────────────────────────────────────────────────
     // 6. 文件保存业务逻辑
     // ─────────────────────────────────────────────────────────
-    val saveFile = {
+    val saveFile: () -> Unit = {
         webViewRef?.let { wv ->
             wv.evaluateJavascript("window.editorAPI.getContentBase64()") { base64WithQuotes ->
                 val cleanBase64 = base64WithQuotes?.trim('"') ?: ""
