@@ -189,7 +189,7 @@ fun EditorScreen(
     LaunchedEffect(isSystemDark) {
         isDarkTheme = isSystemDark
         if (isEditorReady) {
-            val bg = if (isDarkTheme) "#282c34" else "#ffffff"
+            val bg = if (isDarkTheme) "#141729" else "#ffffff"
             executeJs("document.documentElement.style.setProperty('--editor-bg','$bg')")
             executeJs("window.editorAPI.setTheme($isDarkTheme)")
         }
@@ -200,7 +200,7 @@ fun EditorScreen(
     // ─────────────────────────────────────────────────────────
     LaunchedEffect(isEditorReady, isFileLoaded) {
         if (isEditorReady && isFileLoaded) {
-            val bg = if (isDarkTheme) "#282c34" else "#ffffff"
+            val bg = if (isDarkTheme) "#141729" else "#ffffff"
             executeJs("document.documentElement.style.setProperty('--editor-bg','$bg')")
             executeJs("window.editorAPI.setContentBase64('${fileContent.toBase64()}')")
             executeJs("window.editorAPI.setLanguage('$fileExtension')")
@@ -382,7 +382,7 @@ fun EditorScreen(
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(if (isDarkTheme) Color(0xFF282C34) else Color.White)
+                .background(if (isDarkTheme) Color(0xFF141729) else Color.White)
         ) {
             AndroidView(
                 factory = { ctx ->

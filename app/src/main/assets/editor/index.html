@@ -11,11 +11,11 @@
     <title>CodeMirror 6</title>
     <style>
       /* --editor-bg：背景色 token，Kotlin 侧调用 setTheme 时同步注入：
-            dark  → #282c34
+            dark  → #141729
             light → #ffffff
          初始值由 prefers-color-scheme 决定，供页面首帧使用，
          避免 Kotlin bridge 就绪前出现颜色错乱 */
-      :root { --editor-bg: #282c34; }
+      :root { --editor-bg: #141729; }
       @media (prefers-color-scheme: light) {
         :root { --editor-bg: #ffffff; }
       }
@@ -35,12 +35,12 @@
         inset: 0;
       }
       /* 关键：cm-editor 必须显式继承背景色。
-         oneDark 主题启用时会自行覆盖为 #282c34；
+         oneDark 主题启用时会自行覆盖为其默认色，需用 !important 覆盖；
          移除 oneDark（亮色模式）时若不设置，编辑器变透明，
          暗色 body 背景透出，导致亮色模式下仍显示深色。 */
       .cm-editor {
         height: 100%;
-        background-color: var(--editor-bg);
+        background-color: var(--editor-bg) !important;
       }
       .cm-scroller {
         overflow: auto;
