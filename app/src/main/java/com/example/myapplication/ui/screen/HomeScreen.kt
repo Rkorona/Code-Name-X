@@ -83,23 +83,28 @@ private fun filterAndSortProjects(
             filtered.sortedWith(compareBy<Project>(String.CASE_INSENSITIVE_ORDER) { it.name })
 
         ProjectSortOrder.NAME_DESC ->
+            filtered.sortedWith(compareBy<Project, String>(String.CASE_INSENSITIVE_ORDER) { it.name }.reversed())
             // reversed() 是 Comparator 的 Java8 方法，Kotlin 可直接调用
-            filtered.sortedWith(compareBy<Project>(String.CASE_INSENSITIVE_ORDER) { it.name }.reversed())
+            // filtered.sortedWith(compareBy<Project>(String.CASE_INSENSITIVE_ORDER) { it.name }.reversed())
 
         ProjectSortOrder.TYPE_LOCAL_FIRST ->
-            // 多选择器 compareBy：先按类型（LOCAL=0，其他=1），再按名称忽略大小写
             filtered.sortedWith(
-                compareBy<Project>(
-                    { if (it.type == ProjectType.LOCAL) 0 else 1 },
-                    { it.name.lowercase() }
-                )
+                compareBy<Project> { if (it.type == ProjectType.LOCAL) 0 else 1 }
+                    .thenBy { it.name.lowercase() }
             )
+            // 多选择器 compareBy：先按类型（LOCAL=0，其他=1），再按名称忽略大小写
+            // filtered.sortedWith(
+                // compareBy<Project>(
+                    // { if (it.type == ProjectType.LOCAL) 0 else 1 },
+                    // { it.name.lowercase() }
+                // )
+            // )
 
         ProjectSortOrder.TYPE_GITHUB_FIRST ->
             filtered.sortedWith(
                 compareBy<Project>(
-                    { if (it.type == ProjectType.GITHUB) 0 else 1 },
-                    { it.name.lowercase() }
+                    compareBy<Project> { if (it.type == ProjectType.GITHUB) 0 else 1 }
+                        .thenBy { it.name.lowercase() }
                 )
             )
     }
