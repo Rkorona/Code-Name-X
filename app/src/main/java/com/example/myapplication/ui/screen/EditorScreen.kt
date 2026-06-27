@@ -201,7 +201,6 @@ fun EditorScreen(
             executeJs("window.editorAPI.setContentBase64('${fileContent.toBase64()}')")
             executeJs("window.editorAPI.setLanguage('$fileExtension')")
             executeJs("window.editorAPI.setTheme($isDarkTheme)")
-            executeJs("window.editorAPI.setReadOnly($isReadOnly)")
             webViewRef?.postDelayed({
                 webViewRef?.evaluateJavascript(
                     "window.dispatchEvent(new Event('resize'))", null
@@ -299,23 +298,6 @@ fun EditorScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (isReadOnly) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(3.dp)
-                                ) {
-                                    Text(
-                                        text = "READ ONLY",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 9.sp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
                         }
                     }
                 },
