@@ -1,0 +1,43 @@
+<!-- index.html -->
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 移动端视口适配，禁用缩放以保证手势流畅 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>CodeMirror 6</title>
+    <style>
+      /* Kotlin 侧可在注入内容前调用：
+         document.documentElement.style.setProperty('--editor-bg', '#fafafa')
+         提前设置背景色，避免主题切换时出现闪烁帧 */
+      :root { --editor-bg: #282c34; }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: var(--editor-bg);
+        /* 防止编辑器滚动到边界时事件冒泡给外层 WebView，避免整页抖动 */
+        overscroll-behavior: none;
+      }
+      #editor {
+        width: 100%;
+        height: 100%;
+      }
+      /* 让 CodeMirror 内部区域占满容器高度，并支持自然滚动 */
+      .cm-editor {
+        height: 100% !important;
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-zMJymWgQ.js"></script>
+  </head>
+  <body>
+    <div id="editor"></div>
+  </body>
+</html>
