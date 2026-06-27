@@ -35,7 +35,18 @@
         height: 100% !important;
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-zMJymWgQ.js"></script>
+    <script type="module" src="./assets/index-zMJymWgQ.js"></script>
+    <script>
+      function notifyEditorReady() {
+        if (window.editorAPI && typeof window.editorAPI.notifyReady === 'function') {
+          window.editorAPI.notifyReady();
+        } else {
+          setTimeout(notifyEditorReady, 100);
+        }
+      }
+      window.addEventListener('DOMContentLoaded', notifyEditorReady);
+      notifyEditorReady();
+    </script>
   </head>
   <body>
     <div id="editor"></div>

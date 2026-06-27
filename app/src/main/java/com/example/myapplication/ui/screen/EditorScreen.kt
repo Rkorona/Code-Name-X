@@ -421,6 +421,8 @@ fun EditorScreen(
                             domStorageEnabled = true
                             allowFileAccess = true
                             allowContentAccess = true
+                            allowFileAccessFromFileURLs = true
+                            allowUniversalAccessFromFileURLs = true
                             loadWithOverviewMode = true
                             useWideViewPort = true
                         }
@@ -474,6 +476,12 @@ fun EditorScreen(
                                     "window.editorAPI && window.editorAPI.notifyReady()",
                                     null
                                 )
+                                view.postDelayed({
+                                    view.evaluateJavascript(
+                                        "window.editorAPI && window.editorAPI.notifyReady()",
+                                        null
+                                    )
+                                }, 200)
                             }
                         }
 
