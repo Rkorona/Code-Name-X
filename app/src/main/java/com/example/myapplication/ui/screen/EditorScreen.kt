@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
+import android.view.View
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
@@ -424,6 +425,10 @@ fun EditorScreen(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         webViewRef = this
+
+                        // 在模拟器/部分设备上，关闭硬件加速可减少 rendernode 相关噪音，
+                        // 同时避免 WebView 里的 CodeMirror 画面在极端情况下出现渲染异常。
+                        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
                         // 必要的 WebView 安全与功能配置
                         settings.apply {
