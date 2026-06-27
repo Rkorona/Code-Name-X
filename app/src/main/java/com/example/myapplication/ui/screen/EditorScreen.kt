@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
@@ -80,9 +81,24 @@ fun EditorScreen(
     val coroutineScope = rememberCoroutineScope()
 
     // 1. 文件及文件信息解析
-    val file = remember(filePath) { File(filePath) }
-    val fileName = file.name
-    val fileExtension = file.extension
+    val isSafUri = filePath.startsWith("content://")
+    val file = remember(filePath) { if (isSafUri) null else File(filePath) }
+    val fileName = remember(filePath) {
+        if (isSafUri) {
+            Uri.parse(filePath).lastPathSegment
+                ?.substringAfterLast('/')
+                ?.substringAfterLast('%')
+                ?.let { seg ->
+                    // document id is like "primary:QLPanel/main.js" — take part after last /
+                    Uri.decode(Uri.parse(filePath).lastPathSegment ?: "")
+                        .substringAfterLast('/')
+                        .ifBlank { "untitled" }
+                } ?: "untitled"
+        } else {
+            file!!.name
+        }
+    }
+    val fileExtension = fileName.substringAfterLast('.', "")
 
     // 2. 状态保持与监听
     var fileContent by remember { mutableStateOf("") }
@@ -103,12 +119,21 @@ fun EditorScreen(
     LaunchedEffect(filePath) {
         launch(Dispatchers.IO) {
             try {
-                if (file.exists()) {
-                    fileContent = file.readText(Charsets.UTF_8)
+                if (isSafUri) {
+                    val uri = Uri.parse(filePath)
+                    val text = context.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        ?: ""
+                    fileContent = text
                 } else {
-                    file.parentFile?.mkdirs()
-                    file.createNewFile()
-                    fileContent = ""
+                    val f = file!!
+                    if (f.exists()) {
+                        fileContent = f.readText(Charsets.UTF_8)
+                    } else {
+                        f.parentFile?.mkdirs()
+                        f.createNewFile()
+                        fileContent = ""
+                    }
                 }
             } catch (e: Exception) {
                 launch(Dispatchers.Main) {
@@ -140,8 +165,15 @@ fun EditorScreen(
                     coroutineScope.launch(Dispatchers.IO) {
                         try {
                             val content = cleanBase64.fromBase64()
-                            file.writeText(content, Charsets.UTF_8)
-                            fileContent = content // 同步内存
+                            if (isSafUri) {
+                                val uri = Uri.parse(filePath)
+                                context.contentResolver.openOutputStream(uri, "wt")
+                                    ?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+                                    ?: throw Exception("无法打开文件输出流")
+                            } else {
+                                file!!.writeText(content, Charsets.UTF_8)
+                            }
+                            fileContent = content
                             launch(Dispatchers.Main) {
                                 Toast.makeText(context, "文件已保存", Toast.LENGTH_SHORT).show()
                             }
