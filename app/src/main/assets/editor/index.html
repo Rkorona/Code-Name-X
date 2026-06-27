@@ -39,7 +39,7 @@
       // 将页面中的 console 与未捕获错误转发到 Kotlin 注入的 AndroidBridge.log
       // 这能把运行时错误和重要调试信息带回 Android 日志，便于定位 editor 未初始化/内容未注入的问题。
       function setupBridgeLogging() {
-        if ((window as any).__bridgeLoggingInstalled) return
+        if (window.__bridgeLoggingInstalled) return
         function forward(level, args) {
           try {
             const msg = args.map(a => {
@@ -74,7 +74,7 @@
           try { forward('error', [ev.reason || 'unhandledrejection']) } catch (e) {}
         })
 
-        ;(window as any).__bridgeLoggingInstalled = true
+        window.__bridgeLoggingInstalled = true
       }
 
       // 延迟在 DOM 准备好后再动态加载 module，避免在某些 WebView 版本中模块在 DOM 尚未解析时执行，
