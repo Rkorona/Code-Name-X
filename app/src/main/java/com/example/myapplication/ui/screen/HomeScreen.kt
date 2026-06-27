@@ -36,7 +36,10 @@ fun HomeScreen(
     projects: List<Project>,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
+    selectedProject: Project? = null,
     onProjectClick: (Project) -> Unit = {},
+    onProjectSheetDismiss: () -> Unit = {},
+    onOpenFile: (EditorFile) -> Unit = {},
     onNewLocalProject: () -> Unit = {},
     onCloneGithub: () -> Unit = {},
     onImportFile: () -> Unit = {},
@@ -148,6 +151,15 @@ fun HomeScreen(
                 }
             },
             onDismiss = { showAddSheet = false }
+        )
+    }
+
+    // 文件树底部弹窗：点击项目后弹出，无需跳转新页面
+    if (selectedProject != null) {
+        FileExplorerSheet(
+            project = selectedProject,
+            onDismiss = onProjectSheetDismiss,
+            onOpenFile = onOpenFile
         )
     }
 }

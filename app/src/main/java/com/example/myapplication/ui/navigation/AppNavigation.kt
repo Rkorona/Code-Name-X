@@ -13,7 +13,6 @@ import com.example.myapplication.ui.model.Project
 import com.example.myapplication.ui.model.ProjectType
 import com.example.myapplication.ui.screen.EditorFile
 import com.example.myapplication.ui.screen.EditorScreen
-import com.example.myapplication.ui.screen.FileExplorerScreen
 import com.example.myapplication.ui.screen.HomeScreen
 
 // ─────────────────────────────────────────────
@@ -22,7 +21,6 @@ import com.example.myapplication.ui.screen.HomeScreen
 
 sealed class Screen {
     object Home : Screen()
-    data class FileExplorer(val project: Project) : Screen()
     data class Editor(val file: EditorFile) : Screen()
 }
 
@@ -105,6 +103,9 @@ fun AppNavigation() {
         projects.add(0, newProject)
     }
 
+    // 底部弹出文件树的选中项目（null = 未展开）
+    var selectedProject by remember { mutableStateOf<Project?>(null) }
+
     // ── 页面渲染 ─────────────────────────────────────────
     when (val screen = currentScreen) {
 
@@ -114,10 +115,11 @@ fun AppNavigation() {
                 projects = projects,
                 selectedTab = selectedTab,
                 onTabSelected = { selectedTab = it },
+                selectedProject = selectedProject,
                 onProjectClick = { project ->
-                    // 有本地路径的项目 → 文件浏览器；否则直接打开编辑器（占位）
-                    if (project.localPath != null) {
-                        currentScreen = Screen.FileExplorer(project)
+                    // 点击项目 → 底部弹出文件树（无本地路径则打开空编辑器）
+                    if (!project.localPath.isNullOrBlank()) {
+                        selectedProject = project
                     } else {
                         currentScreen = Screen.Editor(
                             file = EditorFile(
@@ -127,6 +129,13 @@ fun AppNavigation() {
                             )
                         )
                     }
+                },
+                onProjectSheetDismiss = {
+                    selectedProject = null
+                },
+                onOpenFile = { editorFile ->
+                    selectedProject = null
+                    currentScreen = Screen.Editor(file = editorFile)
                 },
                 onNewLocalProject = {
                     showNewLocalDialog = true
@@ -142,19 +151,6 @@ fun AppNavigation() {
                 },
                 onSettingsClick = {
                     // TODO: 后续接入设置页
-                }
-            )
-        }
-
-        // ── 文件浏览器 ───────────────────────────────────
-        is Screen.FileExplorer -> {
-            FileExplorerScreen(
-                project = screen.project,
-                onBack = {
-                    currentScreen = Screen.Home
-                },
-                onOpenFile = { editorFile ->
-                    currentScreen = Screen.Editor(file = editorFile)
                 }
             )
         }
