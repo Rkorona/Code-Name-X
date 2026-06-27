@@ -462,33 +462,31 @@ fun EditorScreen(
                             ): WebResourceResponse? {
                                 val response = assetLoader.shouldInterceptRequest(request.url)
                                     ?: return null
-                                // 注入 CORS 头，解除 crossorigin 的跨域限制
-                                response.responseHeaders = (response.responseHeaders ?: emptyMap()).toMutableMap().apply {
-                                    put("Access-Control-Allow-Origin", "*")
-                                }
+                                response.responseHeaders = (response.responseHeaders ?: emptyMap())
+                                    .toMutableMap()
+                                    .apply { put("Access-Control-Allow-Origin", "*") }
                                 return response
                             }
-                            
+
                             override fun onPageFinished(view: WebView, url: String) {
                                 super.onPageFinished(view, url)
+                                // 把所有 type="module" 的 script 转成普通 script 重新执行
+                                // 终极方案：绕过 WebViewAssetLoader + ES module 的 CORS 限制
                                 view.evaluateJavascript("""
-                                    window.onerror = function(msg, src, line, col, err) {
-                                        document.body.style.color = 'red';
-                                        document.body.style.fontSize = '14px';
-                                        document.body.style.padding = '16px';
-                                        document.body.innerHTML = '<b>JS Error:</b><br>' + msg + '<br>at ' + src + ':' + line;
-                                        return true;
-                                    };
-                                    window.addEventListener('unhandledrejection', function(e) {
-                                        document.body.style.color = 'red';
-                                        document.body.style.fontSize = '14px'; 
-                                        document.body.style.padding = '16px';
-                                        document.body.innerHTML = '<b>Promise Error:</b><br>' + e.reason;
-                                    });
+                                    (function() {
+                                        var moduleScripts = document.querySelectorAll('script[type="module"]');
+                                        moduleScripts.forEach(function(orig) {
+                                            var s = document.createElement('script');
+                                            if (orig.src) {
+                                                s.src = orig.src;
+                                            } else {
+                                                s.textContent = orig.textContent;
+                                            }
+                                            orig.parentNode.replaceChild(s, orig);
+                                        });
+                                    })();
                                 """.trimIndent(), null)
                             }
-                            
-                            
                         }
                         // 加载编译后的 H5 静态资源
                         loadUrl("https://appassets.androidplatform.net/assets/editor/index.html")
