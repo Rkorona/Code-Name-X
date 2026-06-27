@@ -337,7 +337,7 @@ fun EditorScreen(
         bottomBar = {
             val isImeVisible = WindowInsets.isImeVisible
             Column {
-                // ── IDE 风格状态栏：键盘弹出时隐藏 ──────────────────────
+                // ── Replit 风格状态栏：键盘弹出时隐藏 ──────────────────────
                 AnimatedVisibility(
                     visible = !isImeVisible,
                     enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
@@ -350,28 +350,108 @@ fun EditorScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(26.dp)
-                                .padding(horizontal = 14.dp),
+                                .height(30.dp) // 略微增加高度，让图标和文字更开阔
+                                .padding(horizontal = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // ── 左侧：环境、语言与诊断 ──
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                StatusBarLabel("Ln $cursorLine")
-                                StatusBarLabel("Col $cursorCol")
-                                StatusBarPipe()
-                                StatusBarLabel("$linesCount 行")
-                                StatusBarPipe()
-                                StatusBarLabel("$charCount 字符")
-                                StatusBarPipe()
-                                StatusBarLabel("UTF-8")
+                                // AI 状态标识 (紫色调)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = "AI",
+                                        tint = Color(0xFF9D4EDD),
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    StatusBarLabel("AI", color = Color(0xFF9D4EDD))
+                                }
+
+                                StatusBarDot()
+
+                                // 语言类型 ({} Kotlin/JS 风格)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Text(
+                                        text = "{}",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    StatusBarLabel(
+                                        text = fileExtension.uppercase().ifBlank { "TEXT" }
+                                    )
+                                }
+
+                                StatusBarDot()
+
+                                // 错误提示 (语义红)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = "Errors",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    StatusBarLabel("0", color = MaterialTheme.colorScheme.error)
+                                }
+
+                                // 警告提示 (语义橙)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Warnings",
+                                        tint = Color(0xFFF5A623),
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    StatusBarLabel("0", color = Color(0xFFF5A623))
+                                }
                             }
-                            StatusBarLabel(
-                                text = fileExtension.uppercase().ifBlank { "TEXT" },
-                                color = MaterialTheme.colorScheme.primary
-                            )
+
+                            // ── 右侧：光标定位、排版与同步 ──
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // 光标位置
+                                StatusBarLabel("Ln $cursorLine, Col $cursorCol")
+
+                                StatusBarDot()
+
+                                // 缩进状态
+                                StatusBarLabel("Spaces: 4")
+
+                                StatusBarDot()
+
+                                // 编码
+                                StatusBarLabel("UTF-8")
+
+                                // 历史/同步图标
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "History",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -532,6 +612,17 @@ private fun StatusBarPipe() {
             .height(10.dp)
             .width(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant)
+    )
+}
+
+@Composable
+private fun StatusBarDot() {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 2.dp)
+            .size(3.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
     )
 }
 
