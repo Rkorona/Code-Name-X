@@ -35,6 +35,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
@@ -324,58 +333,74 @@ fun EditorScreen(
             )
         },
         bottomBar = {
+            val isImeVisible = WindowInsets.isImeVisible
             Column {
-                // ── 辅助输入工具栏 ───────────────────────────────────────
-                QuickActionButtonBar(
-                    isKeyboardEnabled = isKeyboardEnabled,
-                    onToggleKeyboard = {
-                        isKeyboardEnabled = !isKeyboardEnabled
-                        if (isKeyboardEnabled) {
-                            executeJs("window.editorAPI.enableKeyboard()")
-                        } else {
-                            executeJs("window.editorAPI.disableKeyboard()")
-                        }
-                    },
-                    onInsertChar = { char ->
-                        executeJs("window.editorAPI.insertTextBase64('${char.toBase64()}')")
-                    },
-                    onMoveCursor = { dir ->
-                        executeJs("window.editorAPI.moveCursor('$dir')")
-                    }
-                )
-
-                // ── IDE 风格状态栏 ────────────────────────────────────────
-                Surface(
-                    tonalElevation = 6.dp,
-                    modifier = Modifier.fillMaxWidth()
+                // ── IDE 风格状态栏：键盘弹出时隐藏 ──────────────────────
+                AnimatedVisibility(
+                    visible = !isImeVisible,
+                    enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .height(26.dp)
-                            .padding(horizontal = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        tonalElevation = 6.dp,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        // 左侧：光标位置 + 文件统计 + 编码
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                                .padding(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            StatusBarLabel("Ln $cursorLine")
-                            StatusBarLabel("Col $cursorCol")
-                            StatusBarPipe()
-                            StatusBarLabel("$linesCount 行")
-                            StatusBarPipe()
-                            StatusBarLabel("$charCount 字符")
-                            StatusBarPipe()
-                            StatusBarLabel("UTF-8")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                StatusBarLabel("Ln $cursorLine")
+                                StatusBarLabel("Col $cursorCol")
+                                StatusBarPipe()
+                                StatusBarLabel("$linesCount 行")
+                                StatusBarPipe()
+                                StatusBarLabel("$charCount 字符")
+                                StatusBarPipe()
+                                StatusBarLabel("UTF-8")
+                            }
+                            StatusBarLabel(
+                                text = fileExtension.uppercase().ifBlank { "TEXT" },
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        // 右侧：文件类型
-                        StatusBarLabel(
-                            text = fileExtension.uppercase().ifBlank { "TEXT" },
-                            color = MaterialTheme.colorScheme.primary
+                    }
+                }
+
+                // ── 底部栏：键盘弹出→符号栏，键盘收起→工具栏 ───────────
+                AnimatedContent(
+                    targetState = isImeVisible,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "BottomBarSwitch"
+                ) { keyboardVisible ->
+                    if (keyboardVisible) {
+                        QuickActionButtonBar(
+                            onInsertChar = { char ->
+                                executeJs("window.editorAPI.insertTextBase64('${char.toBase64()}')")
+                            },
+                            onMoveCursor = { dir ->
+                                executeJs("window.editorAPI.moveCursor('$dir')")
+                            }
+                        )
+                    } else {
+                        EditorActionsBar(
+                            isKeyboardEnabled = isKeyboardEnabled,
+                            onSave = saveFile,
+                            onToggleKeyboard = {
+                                isKeyboardEnabled = !isKeyboardEnabled
+                                if (isKeyboardEnabled) {
+                                    executeJs("window.editorAPI.enableKeyboard()")
+                                } else {
+                                    executeJs("window.editorAPI.disableKeyboard()")
+                                }
+                            }
                         )
                     }
                 }
@@ -514,8 +539,6 @@ private fun StatusBarPipe() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickActionButtonBar(
-    isKeyboardEnabled: Boolean,
-    onToggleKeyboard: () -> Unit,
     onInsertChar: (String) -> Unit,
     onMoveCursor: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -534,27 +557,6 @@ fun QuickActionButtonBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-
-            // ── 软键盘开关（键帽样式，激活时高亮）────────────────────────────
-            EditorKeyButton(
-                onClick = onToggleKeyboard,
-                isActive = isKeyboardEnabled,
-                modifier = Modifier.size(38.dp)
-            ) {
-                Icon(
-                    imageVector = if (isKeyboardEnabled)
-                        Icons.Default.KeyboardHide else Icons.Default.Keyboard,
-                    contentDescription = "软键盘控制",
-                    modifier = Modifier.size(18.dp),
-                    tint = if (isKeyboardEnabled)
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            ToolbarDivider()
-
             // ── 方向键组 ─────────────────────────────────────────────────────
             EditorArrowKey(
                 icon = Icons.Default.KeyboardArrowLeft,
@@ -628,6 +630,55 @@ private fun ToolbarDivider() {
             .background(MaterialTheme.colorScheme.outlineVariant)
     )
     Spacer(modifier = Modifier.width(2.dp))
+}
+
+// ═════════════════════════════════════════════════════════════
+// 工具栏（键盘收起时替代符号栏显示）
+// ═════════════════════════════════════════════════════════════
+@Composable
+private fun EditorActionsBar(
+    isKeyboardEnabled: Boolean,
+    onSave: () -> Unit,
+    onToggleKeyboard: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        tonalElevation = 4.dp,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(48.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            // 保存文件
+            IconButton(onClick = onSave) {
+                Icon(
+                    imageVector = Icons.Default.Save,
+                    contentDescription = "保存文件",
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            // 软键盘开关
+            IconButton(onClick = onToggleKeyboard) {
+                Icon(
+                    imageVector = if (isKeyboardEnabled)
+                        Icons.Default.KeyboardHide else Icons.Default.Keyboard,
+                    contentDescription = "软键盘",
+                    modifier = Modifier.size(22.dp),
+                    tint = if (isKeyboardEnabled)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
 
 /** 通用键帽按钮基座（支持激活高亮态） */
