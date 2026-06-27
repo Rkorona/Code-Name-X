@@ -1,0 +1,89 @@
+﻿2026-06-27T09:54:25.9104416Z ##[group]Run ./gradlew assembleRelease
+./gradlew assembleRelease
+shell: /usr/bin/bash -e {0}
+env:
+  JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+  JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+  KEYSTORE_PATH: ***.jks
+  KEY_STORE_PASSWORD: ***
+  ALIAS: ***
+  KEY_PASSWORD: ***
+
+Welcome to Gradle 9.5.1!
+
+Here are the highlights of this ***:
+ - Task provenance in reports and failure messages
+ - Type-safe accessors for precompiled Kotlin Settings plugins
+
+For more details see https://docs.gradle.org/9.5.1/***-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+Calculating task graph as no cached configuration is available for tasks: assembleRelease
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:extractProguardFiles
+> Task :app:generateReleaseResources
+> Task :app:mergeReleaseJniLibFolders
+> Task :app:packageReleaseResources
+> Task :app:processReleaseNavigationResources
+> Task :app:checkReleaseDuplicateClasses
+> Task :app:mergeReleaseNativeLibs
+> Task :app:javaPreCompileRelease
+> Task :app:stripReleaseDebugSymbols
+> Task :app:checkReleaseAarMetadata
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:compileReleaseNavigationResources
+> Task :app:extractReleaseNativeSymbolTables
+> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:extractDeepLinksRelease
+> Task :app:parseReleaseLocalResources
+> Task :app:generateReleaseRFile
+> Task :app:desugarReleaseFileDependencies
+> Task :app:mergeReleaseStartupProfile
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
+> Task :app:processReleaseManifestForPackage
+> Task :app:mergeReleaseArtProfile
+> Task :app:mergeReleaseAssets
+> Task :app:compressReleaseAssets
+> Task :app:extractReleaseVersionControlInfo
+> Task :app:collectReleaseDependencies
+> Task :app:sdkReleaseDependencyData
+> Task :app:validateSigningRelease
+> Task :app:writeReleaseAppMetadata
+> Task :app:writeReleaseSigningConfigVersions
+> Task :app:mergeReleaseResources
+> Task :app:processReleaseResources
+> Task :app:optimizeReleaseResources
+> Task :app:kspReleaseKotlin
+> Task :app:mergeExtDexRelease
+
+> Task :app:compileReleaseKotlin
+e: file:///home/runner/work/Code-Name-X/Code-Name-X/app/src/main/java/com/example/myapplication/ui/screen/FileExplorerSheet.kt:614:21 Unresolved reference 'SheetBottomAction'.
+e: file:///home/runner/work/Code-Name-X/Code-Name-X/app/src/main/java/com/example/myapplication/ui/screen/FileExplorerSheet.kt:618:21 Unresolved reference 'SheetBottomAction'.
+e: file:///home/runner/work/Code-Name-X/Code-Name-X/app/src/main/java/com/example/myapplication/ui/screen/FileExplorerSheet.kt:622:21 Unresolved reference 'SheetBottomAction'.
+e: file:///home/runner/work/Code-Name-X/Code-Name-X/app/src/main/java/com/example/myapplication/ui/screen/FileExplorerSheet.kt:626:21 Unresolved reference 'SheetBottomAction'.
+
+
+> Task :app:compileReleaseKotlin FAILED
+FAILURE: Build failed with an exception.
+
+
+* What went wrong:
+[Incubating] Problems report is available at: file:///home/runner/work/Code-Name-X/Code-Name-X/build/reports/problems/problems-report.html
+37 actionable tasks: 37 executed
+Configuration cache entry stored.
+Execution failed for task ':app:compileReleaseKotlin' (registered by plugin 'com.android.internal.application').
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 51s
+Process completed with exit code 1.
