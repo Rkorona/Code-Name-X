@@ -409,23 +409,19 @@ fun EditorScreen(
                 .padding(innerPadding)
                 .background(if (isDarkTheme) Color(0xFF282C34) else Color.White)
         ) {
+            
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
             
-                        val fileList = try {
-                            ctx.assets.list("editor/assets")?.joinToString("\n") ?: "目录为空"
-                        } catch (e: Exception) {
-                            "读取失败: ${e.message}"
-                        }
-            
                         val testHtml = """<!doctype html>
             <html>
             <body style="background:white;color:black;font-size:16px;padding:20px;">
-            <pre>editor/assets/ 下的文件：
-            
-            $fileList</pre>
+            <div id="out">JS未执行</div>
+            <script>
+              document.getElementById('out').innerText = 'JS执行成功！';
+            </script>
             </body>
             </html>"""
             
