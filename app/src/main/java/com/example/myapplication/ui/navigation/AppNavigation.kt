@@ -8,11 +8,13 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.example.myapplication.data.ProjectRepository
 import com.example.myapplication.ui.component.NewLocalProjectDialog
 import com.example.myapplication.ui.model.Project
 import com.example.myapplication.ui.model.ProjectType
 import com.example.myapplication.ui.screen.EditorScreen
 import com.example.myapplication.ui.screen.HomeScreen
+import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────
 // 导航路由定义
@@ -39,12 +41,14 @@ private val localProjectIconColors = listOf(
 @Composable
 fun AppNavigation() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
-    // 项目列表临时状态管理（内存暂存）
-    val projects = remember { mutableStateListOf<Project>() }
+    // 通过 Repository 从数据库加载项目列表
+    val repository = remember { ProjectRepository(context) }
+    val projects by repository.projects.collectAsState(initial = emptyList())
 
     // 弹窗状态
     var showNewLocalDialog by remember { mutableStateOf(false) }
@@ -87,9 +91,9 @@ fun AppNavigation() {
             lastModified = "刚刚",
             iconColor = nextLocalColor(),
             isActive = false,
-            localPath = uri.toString() // 传递 H5 与原生层识别的标准的 content:// 格式
+            localPath = uri.toString()
         )
-        projects.add(0, newProject)
+        scope.launch { repository.addProject(newProject) }
     }
 
     var selectedProject by remember { mutableStateOf<Project?>(null) }
@@ -154,7 +158,7 @@ fun AppNavigation() {
                     isActive = false,
                     localPath = localPath
                 )
-                projects.add(0, newProject)
+                scope.launch { repository.addProject(newProject) }
                 showNewLocalDialog = false
             },
             onDismiss = { showNewLocalDialog = false }
