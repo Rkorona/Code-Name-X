@@ -69,7 +69,8 @@ fun String.fromBase64(): String {
 class WebAppInterface(
     private val onReadyCallback: () -> Unit,
     private val onStatsChangedCallback: (lines: Int, length: Int) -> Unit,
-    private val onCursorChangedCallback: (line: Int, col: Int) -> Unit
+    private val onCursorChangedCallback: (line: Int, col: Int) -> Unit,
+    private val onDiagnosticsChangedCallback: (errors: Int, warnings: Int) -> Unit // 新增回调参数
 ) {
     @JavascriptInterface
     fun onReady() {
@@ -84,6 +85,12 @@ class WebAppInterface(
     @JavascriptInterface
     fun onCursorChanged(line: Int, col: Int) {
         onCursorChangedCallback(line, col)
+    }
+
+    // 接收来自 JS 端编译树分析出来的错误与警告数（新增）
+    @JavascriptInterface
+    fun onDiagnosticsChanged(errors: Int, warnings: Int) {
+        onDiagnosticsChangedCallback(errors, warnings)
     }
 
     @JavascriptInterface
@@ -113,7 +120,7 @@ fun EditorScreen(
     BackHandler { onNavigateBack() }
 
     // ─────────────────────────────────────────────────────────
-    // 1. 持有 WebView 引用及 JS 执行函数（挪到顶部，确保后续逻辑可安全引用）
+    // 1. 持有 WebView 引用及 JS 执行函数
     // ─────────────────────────────────────────────────────────
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
@@ -159,10 +166,13 @@ fun EditorScreen(
     var cursorLine by rememberSaveable { mutableIntStateOf(1) }
     var cursorCol by rememberSaveable { mutableIntStateOf(1) }
 
-    // 主题、键盘控制（支持旋屏状态保留）
+    // 语法诊断结果状态（新增，绑定状态栏）
+    var errorCount by rememberSaveable { mutableIntStateOf(0) }
+    var warningCount by rememberSaveable { mutableIntStateOf(0) }
+
+    // 主题、键盘控制
     val isSystemDark = isSystemInDarkTheme()
     var isDarkTheme by rememberSaveable { mutableStateOf(isSystemDark) }
-    // var isReadOnly by rememberSaveable { mutableStateOf(false) }
     var isKeyboardEnabled by rememberSaveable { mutableStateOf(false) }
 
     // ─────────────────────────────────────────────────────────
@@ -303,7 +313,7 @@ fun EditorScreen(
                                 }
                             }
                         }
-                        // 文件路径提示（只读时显示 READ ONLY 标签）
+                        // 文件路径提示
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -397,7 +407,7 @@ fun EditorScreen(
 
                                 StatusBarDot()
 
-                                // 错误提示 (语义红)
+                                // 错误提示 (语义红) - 绑定动态 errorCount
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -408,10 +418,10 @@ fun EditorScreen(
                                         tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(11.dp)
                                     )
-                                    StatusBarLabel("0", color = MaterialTheme.colorScheme.error)
+                                    StatusBarLabel("$errorCount", color = MaterialTheme.colorScheme.error)
                                 }
 
-                                // 警告提示 (语义橙)
+                                // 警告提示 (语义橙) - 绑定动态 warningCount
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -422,7 +432,7 @@ fun EditorScreen(
                                         tint = Color(0xFFF5A623),
                                         modifier = Modifier.size(11.dp)
                                     )
-                                    StatusBarLabel("0", color = Color(0xFFF5A623))
+                                    StatusBarLabel("$warningCount", color = Color(0xFFF5A623))
                                 }
                             }
 
@@ -500,8 +510,6 @@ fun EditorScreen(
                     WebView(ctx).apply {
                         webViewRef = this
 
-                        // 将 WebView 自身背景设为透明，使其下方 Compose Box 的背景色
-                        // 在页面加载完成前就可见，彻底消除打开编辑器时的白色闪烁帧。
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
 
                         settings.apply {
@@ -530,6 +538,13 @@ fun EditorScreen(
                                     coroutineScope.launch(Dispatchers.Main) {
                                         cursorLine = line
                                         cursorCol = col
+                                    }
+                                },
+                                onDiagnosticsChangedCallback = { errors, warnings ->
+                                    // 监听 JS 端传回的语法树分析诊断并更新 Compose UI (新增)
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        errorCount = errors
+                                        warningCount = warnings
                                     }
                                 }
                             ),
