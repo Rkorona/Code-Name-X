@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -32,11 +33,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,6 +82,7 @@ fun TerminalScreen(
     // ── 纯 UI 状态（切 Tab 可以重置，不需要保活）──
     val isKeyboardVisible = WindowInsets.isImeVisible
     val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     val coroutineScope = rememberCoroutineScope()
     var historyIndex by remember { mutableIntStateOf(-1) }
     var currentInput by remember { mutableStateOf(TextFieldValue("")) }
@@ -100,8 +109,17 @@ fun TerminalScreen(
         historyIndex = -1
         if (cmd == "clear") terminalLines.clear()
         else vm.sendCommand(cmd)
+        
         coroutineScope.launch {
-            delay(300)
+            // 延迟一小会儿，避开 LazyColumn 更新、重绘以及滚动导致的短暂焦点丢失，并确保文本框处于可见区域
+            delay(60)
+            try {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            delay(200)
             enterGuard = false
         }
     }
@@ -175,8 +193,6 @@ fun TerminalScreen(
         }
     }
 
-    // ── 注意：不再有 DisposableEffect 销毁进程，进程生命周期由 ViewModel 管理 ──
-
     val screenClickInteractionSource = remember { MutableInteractionSource() }
 
     Box(
@@ -244,15 +260,25 @@ fun TerminalScreen(
                                         currentInput = TextFieldValue("")
                                         vm.restartShell()
                                     }
-                                    // 换行符拦截：兜底处理（某些键盘会直接插入 \n）
-                                    // 主要发送路径是工具栏 ↵ 按钮，防重复守卫在 sendCurrentInput 内
+                                    // 换行符拦截：这里拦截部分键盘自动输入换行的情况
                                     newVal.text.contains('\n') -> sendCurrentInput(newVal.text)
                                     else -> currentInput = newVal
                                 }
                             },
                             modifier = Modifier
                                 .weight(1f)
-                                .focusRequester(focusRequester),
+                                .focusRequester(focusRequester)
+                                // 拦截物理键盘和部分输入法的按键回车事件
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown &&
+                                        (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)
+                                    ) {
+                                        sendCurrentInput(currentInput.text)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
                             enabled = envState == EnvironmentState.Ready,
                             textStyle = TextStyle(
                                 color = Color.White,
@@ -261,7 +287,15 @@ fun TerminalScreen(
                             ),
                             cursorBrush = SolidColor(Color.White),
                             maxLines = 1,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.None)
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Send,
+                                keyboardType = KeyboardType.Text
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onSend = {
+                                    sendCurrentInput(currentInput.text)
+                                }
+                            )
                         )
                     }
                 }
