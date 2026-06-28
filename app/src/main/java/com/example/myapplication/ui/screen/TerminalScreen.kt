@@ -8,13 +8,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
@@ -66,7 +75,8 @@ enum class EnvironmentState {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TerminalScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -114,14 +124,51 @@ fun TerminalScreen(
         
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                val pb = ProcessBuilder("/system/bin/sh")
-                    .directory(rootfsDir) // 设置初始工作路径为 debian_rootfs 内部
-                    .redirectErrorStream(true) // 合并标准错误输出流到标准输出
+                // 1. 动态检索安装到宿主 lib 目录下的 PRoot 翻译桥接二进制文件（Android 10+ 限制了直接运行 filesDir 目录下的可执行文件，必须从此执行）
+                val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+                val possibleNames = listOf("libproot.so", "libproot-userland.so", "libproot_real.so")
+                var prootFile = possibleNames.map { File(nativeDir, it) }.firstOrNull { it.exists() }
+                
+                if (prootFile == null) {
+                    prootFile = nativeDir.listFiles()?.firstOrNull { 
+                        it.name.contains("proot", ignoreCase = true) && !it.name.contains("loader") 
+                    }
+                }
 
+                val pb = if (prootFile != null && prootFile.exists()) {
+                    // ─────────────────────────────────────────────
+                    // A. PRoot 桥接器存在：构建命令列表启动真正的 Debian 内部 bash 环境
+                    // ─────────────────────────────────────────────
+                    val cmd = listOf(
+                        prootFile.absolutePath,
+                        "-r", rootfsDir.absolutePath,
+                        "-0",          // 模拟 root 权限，允许执行 apt / dpkg 包管理
+                        "-w", "/root",  // 设定虚拟 Linux 内部的工作目录为 /root
+                        "-b", "/dev",  // 绑定系统硬件总线与临时目录，使 Debian 可读写设备
+                        "-b", "/proc",
+                        "-b", "/sys",
+                        "/bin/bash"    // 启动 Debian 内部原生的 Bash 解释器，从而使 apt 命令完全可行
+                    )
+                    ProcessBuilder(cmd)
+                } else {
+                    // ─────────────────────────────────────────────
+                    // B. PRoot 桥接器未找到：安全降级运行宿主 sh
+                    // ─────────────────────────────────────────────
+                    withContext(Dispatchers.Main) {
+                        terminalLines.add("⚠️ 警告: 未在应用原生路径中找到 PRoot 翻译桥接程序 (libproot.so)，已自动安全降级运行 Android 宿主 sh 外壳。在此降级环境下，apt 等 Debian glibc 二进制文件将无法被执行。")
+                    }
+                    ProcessBuilder("/system/bin/sh").directory(rootfsDir)
+                }
+
+                pb.redirectErrorStream(true)
+
+                // 2. 配置与宿主环境安全隔离的 Linux 系统环境变量
                 val env = pb.environment()
-                env["PATH"] = "/sbin:/bin:/usr/sbin:/usr/bin:/system/bin:/system/xbin"
+                env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/system/bin:/system/xbin"
                 env["HOME"] = "/root"
                 env["TERM"] = "xterm-256color"
+                env["LANG"] = "C.UTF-8"
+                env["USER"] = "root"
 
                 val process = pb.start()
                 shellProcess = process
@@ -140,7 +187,7 @@ fun TerminalScreen(
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    terminalLines.add("❌ 启动本地进程桥接失败: ${e.localizedMessage}")
+                    terminalLines.add("❌ 启动终端进程失败: ${e.localizedMessage}")
                 }
             }
         }
@@ -256,7 +303,6 @@ fun TerminalScreen(
     LaunchedEffect(terminalLines.size, isKeyboardVisible) {
         if (envState == EnvironmentState.Ready) {
             coroutineScope.launch {
-                // 列表中的最后项索引刚好是 terminalLines.size（即输入框 item）
                 listState.animateScrollToItem(terminalLines.size)
             }
         }
@@ -269,13 +315,13 @@ fun TerminalScreen(
         }
     }
 
-    // ── 全屏点击监听介质：点击屏幕空白处立即聚焦输入框 ──
+    // ── 全屏点击监听介质 ──
     val screenClickInteractionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .imePadding() // 使终端内容高度自适应键盘高度
+            .imePadding()
     ) {
         Column(
             modifier = Modifier
@@ -288,19 +334,27 @@ fun TerminalScreen(
                     focusRequester.requestFocus()
                 }
         ) {
+            // 0. Termius 风格顶部会话标签栏
+            TerminalTopBar(
+                sessionLabel = "Debian 终端",
+                envState = envState,
+                onBack = onBack,
+                onNewSession = { startNewShell() }
+            )
+
             // A. 数据流交互滚动区（包含日志与随流输入框）
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 // 1. 历史日志组
                 items(terminalLines) { line ->
                     val textColor = when {
-                        line.startsWith("❌") || line.contains("Error") -> Color(0xFFEF4444) // 警示红
+                        line.startsWith("❌") || line.contains("Error") || line.contains("inaccessible") -> Color(0xFFEF4444) // 警示红
                         line.startsWith("[sandbox@debian") -> Color(0xFF38BDF8) // 命令行输入回显天蓝
                         line.startsWith("Welcome") || line.startsWith("Type") || line.contains("successfully") -> Color(0xFF22C55E) // Fish Shell 翠绿
                         else -> terminalTextColor
@@ -316,7 +370,7 @@ fun TerminalScreen(
                     )
                 }
 
-                // 2. 随流命令输入行（作为滚动序列的最后一行，完美还原真实物理终端交互逻辑！）
+                // 2. 随流命令输入行
                 item {
                     Row(
                         modifier = Modifier
@@ -387,7 +441,7 @@ fun TerminalScreen(
                 }
             }
 
-            // B. Termius 级等宽极简辅助工具栏（只在输入法弹起时贴附在键盘顶部）
+            // B. Termius 经典等宽极简辅助工具栏
             if (isKeyboardVisible && envState == EnvironmentState.Ready) {
                 Column(
                     modifier = Modifier
@@ -408,43 +462,39 @@ fun TerminalScreen(
                             },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TerminalKeyButton(text = "👆") { /* 触控模式切换 */ }
+                        TerminalKeyButton(icon = Icons.Default.TouchApp) { /* 模拟触控流 */ }
                         TerminalKeyDivider()
                         TerminalKeyButton(text = "Esc") { handleToolbarKeyPress("Esc") }
                         TerminalKeyDivider()
                         TerminalKeyButton(
                             text = "Ctrl",
                             isActive = isCtrlPressed,
-                            activeBgColor = Color(0xFF00D2D7),
-                            activeFgColor = Color(0xFF111625)
+                            accentColor = Color(0xFF00D2D7)
                         ) {
                             handleToolbarKeyPress("Ctrl")
                         }
                         TerminalKeyDivider()
-                        TerminalKeyButton(text = "Tab") { handleToolbarKeyPress("Tab") }
+                        TerminalKeyButton(icon = Icons.Default.KeyboardArrowUp) { handleToolbarKeyPress("↑") }
                         TerminalKeyDivider()
-                        TerminalKeyButton(text = "↑") { handleToolbarKeyPress("↑") }
+                        TerminalKeyButton(icon = Icons.Default.KeyboardArrowDown) { handleToolbarKeyPress("↓") }
                         TerminalKeyDivider()
-                        TerminalKeyButton(text = "↓") { handleToolbarKeyPress("↓") }
+                        TerminalKeyButton(icon = Icons.Default.KeyboardArrowLeft) { handleToolbarKeyPress("←") }
                         TerminalKeyDivider()
-                        TerminalKeyButton(text = "←") { handleToolbarKeyPress("←") }
-                        TerminalKeyDivider()
-                        TerminalKeyButton(text = "→") { handleToolbarKeyPress("→") }
+                        TerminalKeyButton(icon = Icons.Default.KeyboardArrowRight) { handleToolbarKeyPress("→") }
                         TerminalKeyDivider()
                         TerminalKeyButton(
-                            text = "•••",
+                            icon = Icons.Default.MoreHoriz,
                             isActive = showSecondaryPanel,
-                            activeBgColor = Color(0xFF38BDF8)
+                            accentColor = Color(0xFF38BDF8)
                         ) {
                             showSecondaryPanel = !showSecondaryPanel
                         }
                     }
 
                     if (showSecondaryPanel) {
-                        LazyRow(
+                        FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(44.dp)
                                 .background(Color(0xFF141A24))
                                 .drawBehind {
                                     drawLine(
@@ -453,19 +503,22 @@ fun TerminalScreen(
                                         end = Offset(size.width, 0f),
                                         strokeWidth = 1.dp.toPx()
                                     )
-                                },
-                            verticalAlignment = Alignment.CenterVertically
+                                }
+                                .padding(vertical = 2.dp)
                         ) {
                             val secondarySymbols = listOf(
-                                "{ }", "[ ]", "( )", "Home", "End", "|", "/", "\\", "_", "-", "&", "$", 
+                                "Tab", "{ }", "[ ]", "( )", "Home", "End", "|", "/", "\\", "_", "-", "&", "$",
                                 "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"
                             )
-                            items(secondarySymbols) { sym ->
+                            secondarySymbols.forEach { sym ->
                                 Box(
                                     modifier = Modifier
                                         .width(58.dp)
-                                        .fillMaxHeight()
-                                        .clickable { handleToolbarKeyPress(sym) },
+                                        .height(44.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) { handleToolbarKeyPress(sym) },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
@@ -478,12 +531,6 @@ fun TerminalScreen(
                                         )
                                     )
                                 }
-                                Spacer(
-                                    modifier = Modifier
-                                        .width(1.dp)
-                                        .fillMaxHeight(0.5f)
-                                        .background(Color(0xFF242F41))
-                                )
                             }
                         }
                     }
@@ -643,33 +690,53 @@ fun TerminalScreen(
 }
 
 // ─────────────────────────────────────────────
-// 封装：等宽均分扁平式 Terminal 按键
+// 封装：等宽均分扁平式 Terminal 按键（Termius 风格：下划线指示激活态）
 // ─────────────────────────────────────────────
 @Composable
 fun RowScope.TerminalKeyButton(
-    text: String,
+    text: String? = null,
+    icon: ImageVector? = null,
     isActive: Boolean = false,
-    activeBgColor: Color = Color(0xFF38BDF8),
-    activeFgColor: Color = Color.White,
+    accentColor: Color = Color(0xFF38BDF8),
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .weight(1f) // 完美均分屏幕宽度
             .fillMaxHeight()
-            .background(if (isActive) activeBgColor else Color.Transparent)
-            .clickable { onClick() },
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = text,
-            style = TextStyle(
-                color = if (isActive) activeFgColor else Color(0xFFE2E8F0),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            when {
+                icon != null -> Icon(
+                    imageVector = icon,
+                    contentDescription = text,
+                    tint = if (isActive) accentColor else Color(0xFFE2E8F0),
+                    modifier = Modifier.size(18.dp)
+                )
+                text != null -> Text(
+                    text = text,
+                    style = TextStyle(
+                        color = if (isActive) accentColor else Color(0xFFE2E8F0),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Box(
+                modifier = Modifier
+                    .width(16.dp)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(if (isActive) accentColor else Color.Transparent)
             )
-        )
+        }
     }
 }
 
@@ -684,6 +751,90 @@ fun TerminalKeyDivider() {
             .fillMaxHeight(0.55f) // 分割线仅占用 55% 的高度并垂直居中
             .background(Color(0xFF2E384D))
     )
+}
+
+// ─────────────────────────────────────────────
+// 封装：Termius 风格顶部会话标签栏
+// 还原 Termius 的圆角标签胶囊 + 状态指示灯 + 新建会话按钮布局
+// ─────────────────────────────────────────────
+@Composable
+fun TerminalTopBar(
+    sessionLabel: String,
+    envState: EnvironmentState,
+    onBack: (() -> Unit)?,
+    onNewSession: () -> Unit
+) {
+    val headerBg = Color(0xFF1C2330)
+    val pillBg = Color(0xFF2A3346)
+    val dividerColor = Color(0xFF2E384D)
+    val statusColor = when (envState) {
+        EnvironmentState.Ready -> Color(0xFF22C55E)
+        EnvironmentState.Downloading, EnvironmentState.Extracting -> Color(0xFFF59E0B)
+        EnvironmentState.NotInstalled, EnvironmentState.Checking -> Color(0xFF64748B)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .background(headerBg)
+            .drawBehind {
+                drawLine(
+                    color = dividerColor,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "返回",
+                    tint = Color(0xFFE2E8F0)
+                )
+            }
+        } else {
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = pillBg
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(statusColor)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = sessionLabel,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        IconButton(onClick = onNewSession) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "新建终端会话",
+                tint = Color(0xFFE2E8F0)
+            )
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
