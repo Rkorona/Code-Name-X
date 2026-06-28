@@ -132,6 +132,16 @@ fun TerminalScreen(
                     }
                 }
 
+                // 确保 proot 二进制有执行权限（Android 解压 .so 时不一定会自动加 +x）
+                if (prootFile != null && prootFile.exists() && !prootFile.canExecute()) {
+                    try {
+                        prootFile.setExecutable(true, false)
+                    } catch (e: Exception) {
+                        // 如果 setExecutable 失败（SELinux 限制），尝试 chmod
+                        Runtime.getRuntime().exec(arrayOf("chmod", "755", prootFile.absolutePath)).waitFor()
+                    }
+                }
+
                 val pb = if (prootFile != null && prootFile.exists()) {
                     // ─────────────────────────────────────────────
                     // A. PRoot 桥接器存在：构建命令列表启动真正的 Debian 内部 bash 环境

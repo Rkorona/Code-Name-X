@@ -47,6 +47,13 @@ android {
         compose = true
     }
     buildToolsVersion = "37.0.0"
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += "**/libproot.so"
+        }
+    }
 }
 
 dependencies {
