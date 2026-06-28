@@ -1,6 +1,8 @@
 package com.example.myapplication.ui.screen
 
 import android.content.Context
+import android.os.Build
+import android.system.Os
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +38,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.LinkOption
 
 // ─────────────────────────────────────────────
 // 环境状态机枚举
@@ -78,14 +82,16 @@ fun TerminalScreen(
     // ── 自动检测现存 Debian 环境是否健全 ──
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val shExec = File(rootfsDir, "bin/sh")
-            if (shExec.exists() && rootfsDir.isDirectory) {
+            val isInstalled = isDebianInstalled(rootfsDir)
+            if (isInstalled) {
                 envState = EnvironmentState.Ready
                 withContext(Dispatchers.Main) {
-                    terminalLines.add("Welcome to Debian GNU/Linux 12 (bookworm) via PRoot!")
-                    terminalLines.add("System architecture: aarch64 (Android sandboxed)")
-                    terminalLines.add("Debian rootfs detected successfully.")
-                    terminalLines.add("")
+                    if (terminalLines.isEmpty()) {
+                        terminalLines.add("Welcome to Debian GNU/Linux 13 (trixie) via PRoot!")
+                        terminalLines.add("System architecture: aarch64 (Android sandboxed)")
+                        terminalLines.add("Debian rootfs detected successfully.")
+                        terminalLines.add("")
+                    }
                 }
             } else {
                 envState = EnvironmentState.NotInstalled
@@ -244,7 +250,7 @@ fun TerminalScreen(
                             lineHeight = 20.sp
                         )
                         
-                        // 亮点：如果失败了，直接在这里把报错信息怼在用户脸上，拒绝一抹黑！
+                        // 如果失败了，直接在这里把报错信息显示出来
                         if (currentStatusMessage.startsWith("❌")) {
                             Surface(
                                 color = MaterialTheme.colorScheme.errorContainer,
@@ -338,7 +344,53 @@ fun TerminalScreen(
 }
 
 // ─────────────────────────────────────────────
-// 强力高防网络下载引擎（支持多重手动重定向 + UA 伪装）
+// 健全的环境存在性检测函数（防止软链接解析失败导致的误判）
+// ─────────────────────────────────────────────
+private fun isDebianInstalled(rootfsDir: File): Boolean {
+    if (!rootfsDir.exists() || !rootfsDir.isDirectory) return false
+
+    // 检测不含软链接干扰的 Linux 关键结构
+    val etcDir = File(rootfsDir, "etc")
+    val usrDir = File(rootfsDir, "usr")
+
+    val hasEtcPasswd = File(etcDir, "passwd").exists()
+    val hasUsrBin = File(usrDir, "bin").exists() && File(usrDir, "bin").isDirectory
+
+    // 检测 bin/sh，不跟随（NOFOLLOW_LINKS）软链接解析，仅检查该链接节点本身是否存在
+    val shFile = File(rootfsDir, "bin/sh")
+    val hasShSymlink = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Files.exists(shFile.toPath(), LinkOption.NOFOLLOW_LINKS)
+        } else {
+            shFile.exists() || shFile.length() > 0 || shFile.parentFile?.exists() == true
+        }
+    } catch (e: Exception) {
+        false
+    }
+
+    // 只要核心目录和核心可执行文件存在其一，即判定环境已就绪，避免因宿主无法解析 Linux 绝对路径软链接而误判
+    return (hasUsrBin && hasEtcPasswd) || (hasShSymlink && hasUsrBin)
+}
+
+// ─────────────────────────────────────────────
+// 智能创建父级目录（支持 UsrMerge 软链接重定向）
+// ─────────────────────────────────────────────
+private fun safeCreateParentDirs(file: File, rootfsDir: File) {
+    val parent = file.parentFile ?: return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        try {
+            // NIO 的 createDirectories 能够正确追踪并穿透软链接，在目的位置创建目录而不会破坏软链接本身
+            Files.createDirectories(parent.toPath())
+            return
+        } catch (e: Exception) {
+            // 降级使用普通 mkdirs
+        }
+    }
+    parent.mkdirs()
+}
+
+// ─────────────────────────────────────────────
+// 强力高防网络下载引擎
 // ─────────────────────────────────────────────
 private suspend fun performDownloadRootfs(
     downloadUrl: String,
@@ -360,16 +412,14 @@ private suspend fun performDownloadRootfs(
             targetFile.delete()
         }
 
-        // 核心重定向追踪循环
         while (redirectCount < maxRedirects) {
             withContext(Dispatchers.Main) { onStatusChanged("正在建立安全数据连接…") }
             val url = URL(currentUrl)
             connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 15000
             connection.readTimeout = 30000
-            connection.instanceFollowRedirects = false // 关闭原生混淆，由我们精确掌控
+            connection.instanceFollowRedirects = false // 自控重定向
             
-            // 重要：注入标准浏览器 User-Agent，防止开源镜像站因安全审查拦截直接返回 403
             connection.setRequestProperty(
                 "User-Agent", 
                 "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
@@ -377,7 +427,6 @@ private suspend fun performDownloadRootfs(
 
             val status = connection.responseCode
             
-            // 判定是否属于 HTTP 重定向家族（301, 302, 303, 307, 308）
             if (status == HttpURLConnection.HTTP_MOVED_PERM || 
                 status == HttpURLConnection.HTTP_MOVED_TEMP || 
                 status == 303 || status == 307 || status == 308) {
@@ -387,27 +436,26 @@ private suspend fun performDownloadRootfs(
                     currentUrl = newUrl
                     redirectCount++
                     connection.disconnect()
-                    continue // 跃迁到下一级 CDN 节点
+                    continue
                 }
             }
 
             if (status == HttpURLConnection.HTTP_OK) {
                 downloadSuccess = true
-                break // 成功驻留有效资源节点
+                break
             } else {
                 withContext(Dispatchers.Main) { 
-                    onStatusChanged("❌ 服务器拒绝请求: HTTP $status (可能节点正忙)") 
+                    onStatusChanged("❌ 服务器拒绝请求: HTTP $status") 
                 }
                 return@withContext false
             }
         }
 
         if (!downloadSuccess) {
-            withContext(Dispatchers.Main) { onStatusChanged("❌ 错误: CDN 重定向次数过多，陷入环路") }
+            withContext(Dispatchers.Main) { onStatusChanged("❌ 错误: CDN 重定向次数过多") }
             return@withContext false
         }
 
-        // ── 开始执行正式的大文件数据流传输 ──
         val fileLength = connection!!.contentLengthLong
         inputStream = BufferedInputStream(connection.inputStream, 16384)
         outputStream = FileOutputStream(targetFile)
@@ -430,7 +478,6 @@ private suspend fun performDownloadRootfs(
                     onProgress(progress)
                 }
             } else {
-                // 处理一些镜像站采用 Chunked 分块传输编码导致 contentLength 无效的情况
                 val readMb = String.format("%.1f", totalBytesRead.toFloat() / (1024 * 1024))
                 withContext(Dispatchers.Main) {
                     onStatusChanged("已下载 $readMb MB (流式无界传输中…)")
@@ -443,13 +490,13 @@ private suspend fun performDownloadRootfs(
     } catch (e: SecurityException) {
         e.printStackTrace()
         withContext(Dispatchers.Main) {
-            onStatusChanged("❌ 安全限制: 请检查 AndroidManifest.xml 是否遗漏了 INTERNET 权限配置")
+            onStatusChanged("❌ 安全限制: 请检查 AndroidManifest.xml 是否配置了 INTERNET 权限")
         }
         return@withContext false
     } catch (e: Exception) {
         e.printStackTrace()
         withContext(Dispatchers.Main) {
-            onStatusChanged("❌ 网络异常: ${e.localizedMessage ?: "建立数据握手失败"}")
+            onStatusChanged("❌ 网络异常: ${e.localizedMessage ?: "数据握手失败"}")
         }
         return@withContext false
     } finally {
@@ -460,7 +507,7 @@ private suspend fun performDownloadRootfs(
 }
 
 // ─────────────────────────────────────────────
-// 核心后台解压部署引擎
+// 支持 Linux 软/硬链接还原的解压部署引擎
 // ─────────────────────────────────────────────
 private suspend fun performExtractTarXz(
     archiveFile: File,
@@ -485,7 +532,7 @@ private suspend fun performExtractTarXz(
         while (entry != null) {
             val targetFile = File(destinationDir, entry.name)
             
-            // 安全机制：防止恶意路径穿越攻击
+            // 安全机制：防止恶意路径穿越
             if (!targetFile.canonicalPath.startsWith(destinationDir.canonicalPath)) {
                 entry = tarIn.nextEntry
                 continue
@@ -493,8 +540,42 @@ private suspend fun performExtractTarXz(
 
             if (entry.isDirectory) {
                 targetFile.mkdirs()
+            } else if (entry.isSymbolicLink) {
+                // ─────────────────────────────────────────────
+                // 1. 还原 Linux 软链接 (Symlink)
+                // ─────────────────────────────────────────────
+                val target = entry.linkName
+                safeCreateParentDirs(targetFile, destinationDir)
+                targetFile.delete() // 必须先删除旧节点才能建立新链接
+                try {
+                    Os.symlink(target, targetFile.absolutePath)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } else if (entry.isLink) {
+                // ─────────────────────────────────────────────
+                // 2. 还原 Linux 硬链接 (Hard Link)
+                // ─────────────────────────────────────────────
+                val target = entry.linkName
+                safeCreateParentDirs(targetFile, destinationDir)
+                targetFile.delete()
+                try {
+                    val existingFile = File(destinationDir, target.removePrefix("/"))
+                    if (existingFile.exists()) {
+                        Os.link(existingFile.absolutePath, targetFile.absolutePath)
+                    } else {
+                        // 降级：如果指向的原文件还没解压出来，创建软链接代之
+                        Os.symlink(target, targetFile.absolutePath)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             } else {
-                targetFile.parentFile?.mkdirs()
+                // ─────────────────────────────────────────────
+                // 3. 部署普通文件 (Regular File)
+                // ─────────────────────────────────────────────
+                safeCreateParentDirs(targetFile, destinationDir)
+                targetFile.delete()
                 FileOutputStream(targetFile).use { fos ->
                     val buffer = ByteArray(16384)
                     var len: Int
@@ -528,7 +609,7 @@ private suspend fun performExtractTarXz(
     } catch (e: Exception) {
         e.printStackTrace()
         withContext(Dispatchers.Main) {
-            onStatusChanged("❌ 部署异常: 系统解压中断，可能是手机存储空间不足")
+            onStatusChanged("❌ 部署异常: ${e.localizedMessage ?: "系统解压中断"}")
         }
         return@withContext false
     }
