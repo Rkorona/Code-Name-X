@@ -19,6 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -270,27 +272,27 @@ fun TerminalScreen(
             .imePadding() // 使终端内容高度自适应键盘高度，防止输入法遮挡
     ) {
         // ─────────────────────────────────────────────
-        // 1. 标准控制台内核层 UI
+        // 1. 标准控制台内核层 UI（整体容器）
         // ─────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(terminalBackground)
-                .padding(8.dp)
         ) {
+            // A. 历史终端日志渲染区
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items(terminalLines) { line ->
-                    // ── 根据不同日志语义渲染不同的 Termius 色值 ──
                     val textColor = when {
-                        line.startsWith("❌") || line.contains("Error") -> Color(0xFFEF4444) // 现代偏柔红 (Error)
-                        line.startsWith("[sandbox@debian") -> Color(0xFF38BDF8) // 极客天蓝色 (Command Echo)
-                        line.startsWith("Welcome") || line.startsWith("Type") || line.contains("successfully") -> Color(0xFF22C55E) // Fish Shell 的活力翠绿
+                        line.startsWith("❌") || line.contains("Error") -> Color(0xFFEF4444) // 警示红
+                        line.startsWith("[sandbox@debian") -> Color(0xFF38BDF8) // 命令行输入回显天蓝
+                        line.startsWith("Welcome") || line.startsWith("Type") || line.contains("successfully") -> Color(0xFF22C55E) // 活力翠绿
                         else -> terminalTextColor
                     }
                     Text(
@@ -305,94 +307,19 @@ fun TerminalScreen(
                 }
             }
 
-            // ── Termius 经典滑动工具栏（只在键盘弹起时出现） ──
-            if (isKeyboardVisible && envState == EnvironmentState.Ready) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF161C27))
-                ) {
-                    // 第一级水平可滑动工具栏
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 5.dp, horizontal = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        item {
-                            TerminalKeyButton(text = "👆") {
-                                // 模拟 Termius 触控流开关
-                            }
-                        }
-                        item { TerminalKeyButton(text = "Esc") { handleToolbarKeyPress("Esc") } }
-                        item {
-                            TerminalKeyButton(
-                                text = "Ctrl",
-                                isActive = isCtrlPressed,
-                                activeBgColor = Color(0xFF00D2D7),
-                                activeFgColor = Color(0xFF111625)
-                            ) {
-                                handleToolbarKeyPress("Ctrl")
-                            }
-                        }
-                        item { TerminalKeyButton(text = "Tab") { handleToolbarKeyPress("Tab") } }
-                        item { TerminalKeyButton(text = "↑") { handleToolbarKeyPress("↑") } }
-                        item { TerminalKeyButton(text = "↓") { handleToolbarKeyPress("↓") } }
-                        item { TerminalKeyButton(text = "←") { handleToolbarKeyPress("←") } }
-                        item { TerminalKeyButton(text = "→") { handleToolbarKeyPress("→") } }
-                        item { TerminalKeyButton(text = "Home") { handleToolbarKeyPress("Home") } }
-                        item { TerminalKeyButton(text = "End") { handleToolbarKeyPress("End") } }
-                        
-                        // 三点展开面板控制按键
-                        item {
-                            TerminalKeyButton(
-                                text = "•••",
-                                isActive = showSecondaryPanel,
-                                activeBgColor = Color(0xFF38BDF8)
-                            ) {
-                                showSecondaryPanel = !showSecondaryPanel
-                            }
-                        }
-                    }
-
-                    // 第二级展开符号功能面板
-                    if (showSecondaryPanel) {
-                        LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF0E131C))
-                                .padding(vertical = 5.dp, horizontal = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val secondarySymbols = listOf(
-                                "{ }", "[ ]", "( )", "|", "/", "\\", "_", "-", "&", "$", 
-                                "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"
-                            )
-                            items(secondarySymbols) { sym ->
-                                TerminalKeyButton(text = sym) {
-                                    handleToolbarKeyPress(sym)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ── 真实的双向交互终端命令行输入区域 ──
+            // B. 真实的双向交互终端命令行输入区域（已调整至工具栏上方！）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight()
-                    .padding(vertical = 4.dp),
+                    .background(terminalBackground)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // ── [ 拼接出优雅的 Termius + Fish 风格命令行开头提示符 ] ──
                 Text(
                     text = "[",
                     style = TextStyle(
-                        color = Color(0xFF00D2D7), // 靓丽青色
+                        color = Color(0xFF00D2D7),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -401,7 +328,7 @@ fun TerminalScreen(
                 Text(
                     text = "sandbox@debian",
                     style = TextStyle(
-                        color = Color(0xFF38BDF8), // 亮天蓝
+                        color = Color(0xFF38BDF8),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -410,7 +337,7 @@ fun TerminalScreen(
                 Text(
                     text = ":",
                     style = TextStyle(
-                        color = Color(0xFF94A3B8), // 雾灰色
+                        color = Color(0xFF94A3B8),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -419,7 +346,7 @@ fun TerminalScreen(
                 Text(
                     text = "~",
                     style = TextStyle(
-                        color = Color(0xFF22C55E), // 翠绿
+                        color = Color(0xFF22C55E),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -428,7 +355,7 @@ fun TerminalScreen(
                 Text(
                     text = "]$ ",
                     style = TextStyle(
-                        color = Color(0xFF00D2D7), // 靓丽青色
+                        color = Color(0xFF00D2D7),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -438,11 +365,10 @@ fun TerminalScreen(
                 BasicTextField(
                     value = currentInput,
                     onValueChange = { newVal ->
-                        // 亮点：极客暗门 Ctrl + c 中断映射
                         if (isCtrlPressed && newVal.text.lowercase().endsWith("c")) {
                             terminalLines.add("[sandbox@debian:~]$ ^C")
                             terminalLines.add("❌ Process Interrupted (Ctrl+C)")
-                            startNewShell() // 通过重启动作安全解除前台进程堵塞
+                            startNewShell() 
                             currentInput = TextFieldValue("")
                         } else {
                             currentInput = newVal
@@ -462,21 +388,17 @@ fun TerminalScreen(
                         onSend = {
                             val cmd = currentInput.text.trim()
                             if (cmd.isNotBlank()) {
-                                // 1. 本地回显记录 (采用 Termius 的标志性样式包裹以区分输出和输入)
                                 val promptHeader = "[sandbox@debian:~]$ $cmd"
                                 terminalLines.add(promptHeader)
 
-                                // 放入历史记录轮询链中
                                 if (commandHistory.isEmpty() || commandHistory.last() != cmd) {
                                     commandHistory.add(cmd)
                                 }
-                                historyIndex = -1 // 归位索引
+                                historyIndex = -1 
 
-                                // 2. 处理清除清屏
                                 if (cmd == "clear") {
                                     terminalLines.clear()
                                 } else {
-                                    // 3. 将命令推入真实进程的管道中执行
                                     coroutineScope.launch(Dispatchers.IO) {
                                         try {
                                             shellWriter?.let { writer ->
@@ -490,7 +412,7 @@ fun TerminalScreen(
                                         }
                                     }
                                 }
-                                currentInput = TextFieldValue("") // 完美清空命令行
+                                currentInput = TextFieldValue("") 
                                 coroutineScope.launch {
                                     if (terminalLines.size > 0) {
                                         listState.animateScrollToItem(terminalLines.size - 1)
@@ -500,6 +422,113 @@ fun TerminalScreen(
                         }
                     )
                 )
+            }
+
+            // C. Termius 经典扁平化、等宽无缝工具栏（仅在键盘弹起时出现，紧贴键盘顶部）
+            if (isKeyboardVisible && envState == EnvironmentState.Ready) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1C2330)) // 一体化深 slate 蓝
+                ) {
+                    // 主键盘辅助栏：绘制极细顶部微光线与等宽分隔符
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .drawBehind {
+                                // 绘制顶部超细灰色分割线
+                                drawLine(
+                                    color = Color(0xFF2E384D),
+                                    start = Offset(0f, 0f),
+                                    end = Offset(size.width, 0f),
+                                    strokeWidth = 1.dp.toPx()
+                                )
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TerminalKeyButton(text = "👆") { /* 模拟触控流 */ }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(text = "Esc") { handleToolbarKeyPress("Esc") }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(
+                            text = "Ctrl",
+                            isActive = isCtrlPressed,
+                            activeBgColor = Color(0xFF00D2D7),
+                            activeFgColor = Color(0xFF111625)
+                        ) {
+                            handleToolbarKeyPress("Ctrl")
+                        }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(text = "Tab") { handleToolbarKeyPress("Tab") }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(text = "↑") { handleToolbarKeyPress("↑") }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(text = "↓") { handleToolbarKeyPress("↓") }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(text = "←") { handleToolbarKeyPress("←") }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(text = "→") { handleToolbarKeyPress("→") }
+                        TerminalKeyDivider()
+                        TerminalKeyButton(
+                            text = "•••",
+                            isActive = showSecondaryPanel,
+                            activeBgColor = Color(0xFF38BDF8)
+                        ) {
+                            showSecondaryPanel = !showSecondaryPanel
+                        }
+                    }
+
+                    // 二级展开横滑辅助面板（采用稍深的底色形成视觉递进）
+                    if (showSecondaryPanel) {
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                                .background(Color(0xFF141A24))
+                                .drawBehind {
+                                    drawLine(
+                                        color = Color(0xFF242F41),
+                                        start = Offset(0f, 0f),
+                                        end = Offset(size.width, 0f),
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val secondarySymbols = listOf(
+                                "{ }", "[ ]", "( )", "Home", "End", "|", "/", "\\", "_", "-", "&", "$", 
+                                "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"
+                            )
+                            items(secondarySymbols) { sym ->
+                                Box(
+                                    modifier = Modifier
+                                        .width(58.dp)
+                                        .fillMaxHeight()
+                                        .clickable { handleToolbarKeyPress(sym) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = sym,
+                                        style = TextStyle(
+                                            color = Color(0xFFE2E8F0),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                }
+                                // 二级面板垂直细分线
+                                Spacer(
+                                    modifier = Modifier
+                                        .width(1.dp)
+                                        .fillMaxHeight(0.5f)
+                                        .background(Color(0xFF242F41))
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -655,10 +684,10 @@ fun TerminalScreen(
 }
 
 // ─────────────────────────────────────────────
-// 封装：Termius 风格单键自定义 Composable
+// 封装：等宽均分扁平式 Terminal 按键
 // ─────────────────────────────────────────────
 @Composable
-fun TerminalKeyButton(
+fun RowScope.TerminalKeyButton(
     text: String,
     isActive: Boolean = false,
     activeBgColor: Color = Color(0xFF38BDF8),
@@ -667,10 +696,10 @@ fun TerminalKeyButton(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(if (isActive) activeBgColor else Color(0xFF282F40))
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .weight(1f) // 完美均分屏幕宽度
+            .fillMaxHeight()
+            .background(if (isActive) activeBgColor else Color.Transparent)
+            .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -683,6 +712,19 @@ fun TerminalKeyButton(
             )
         )
     }
+}
+
+// ─────────────────────────────────────────────
+// 封装：精致的半高按键分割线
+// ─────────────────────────────────────────────
+@Composable
+fun TerminalKeyDivider() {
+    Spacer(
+        modifier = Modifier
+            .width(1.dp)
+            .fillMaxHeight(0.55f) // 分割线仅占用 55% 的高度并垂直居中，高级感的核心
+            .background(Color(0xFF2E384D))
+    )
 }
 
 // ─────────────────────────────────────────────
