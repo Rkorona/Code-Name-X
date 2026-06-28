@@ -4,7 +4,8 @@ import android.app.Application
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.Os
-import androidx.compose.runtime.getValue
+import android.util.Log
+import androidx.compose.runtime.getBy
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -82,11 +83,10 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch(Dispatchers.IO) {
             val installed = isDebianInstalled(rootfsDir)
             withContext(Dispatchers.Main) {
-                if (installed) {
-                    envState = EnvironmentState.Ready
-                    startShellIfNeeded()
+                envState = if (installed) {
+                    EnvironmentState.Ready
                 } else {
-                    envState = EnvironmentState.NotInstalled
+                    EnvironmentState.NotInstalled
                 }
             }
         }
@@ -200,6 +200,7 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
                 )
 
                 if (result == null || result.size < 2) {
+                    Log.e("TerminalViewModel", "forkExecPty returned null or invalid result")
                     withContext(Dispatchers.Main) {
                         terminalLines.add("❌ PTY fork 失败，回退到 pipe 模式不可用")
                         shellStarted = false
@@ -228,6 +229,7 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.Main) { shellStarted = false }
 
             } catch (e: Exception) {
+                Log.e("TerminalViewModel", "startShellIfNeeded failed", e)
                 withContext(Dispatchers.Main) {
                     terminalLines.add("❌ 启动终端进程失败: ${e.localizedMessage}")
                     shellStarted = false

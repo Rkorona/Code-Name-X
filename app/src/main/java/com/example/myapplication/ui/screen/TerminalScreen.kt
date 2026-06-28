@@ -1,6 +1,7 @@
 package com.example.myapplication.ui.screen
 
 import android.util.Base64
+import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -79,14 +80,22 @@ fun TerminalScreen(
 
     // WebView 引用（用于向 xterm.js 写入 PTY 输出）
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    var pageReady by remember { mutableStateOf(false) }
 
     // ── 收集 PTY 输出 → 推送到 xterm.js ──────────────────────────
     LaunchedEffect(Unit) {
         vm.ptyOutput.collect { chunk ->
+            if (!pageReady) return@collect
             val b64 = Base64.encodeToString(chunk, Base64.NO_WRAP)
             webViewRef.value?.post {
                 webViewRef.value?.evaluateJavascript("window.writeOutput('$b64')", null)
             }
+        }
+    }
+
+    LaunchedEffect(envState, pageReady) {
+        if (envState == EnvironmentState.Ready && pageReady) {
+            vm.startShellIfNeeded()
         }
     }
 
@@ -164,7 +173,26 @@ fun TerminalScreen(
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
-                                    android.util.Log.d("TerminalScreen", "WebView page finished: $url")
+                                    Log.d("TerminalScreen", "WebView page finished: $url")
+                                    pageReady = true
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView,
+                                    request: WebResourceRequest,
+                                    error: android.webkit.WebResourceError
+                                ) {
+                                    super.onReceivedError(view, request, error)
+                                    Log.e("TerminalScreen", "WebView error: ${error.description} url=${request.url}")
+                                }
+
+                                override fun onReceivedHttpError(
+                                    view: WebView,
+                                    request: WebResourceRequest,
+                                    errorResponse: WebResourceResponse
+                                ) {
+                                    super.onReceivedHttpError(view, request, errorResponse)
+                                    Log.e("TerminalScreen", "HTTP error: ${errorResponse.statusCode} ${errorResponse.reasonPhrase} url=${request.url}")
                                 }
                             }
 
@@ -184,6 +212,29 @@ fun TerminalScreen(
                         .fillMaxWidth()
                         .weight(1f)
                 )
+
+                // B. Termius 风格工具栏（仅键盘弹出时显示）
+                if (terminalLines.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xAA000000))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "终端调试信息:",
+                                style = TextStyle(color = Color(0xFFFFFFFF), fontWeight = FontWeight.Bold)
+                            )
+                            terminalLines.forEach { line ->
+                                Text(
+                                    text = line,
+                                    style = TextStyle(color = Color(0xFFFAFAFA), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // B. Termius 风格工具栏（仅键盘弹出时显示）
                 if (isKeyboardVisible) {
