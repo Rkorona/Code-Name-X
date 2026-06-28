@@ -51,6 +51,7 @@ enum class EnvironmentState {
     NotInstalled,
     Downloading,
     Extracting,
+    Initializing,   // 解压完成后的环境初始化（sources.list / DNS / bashrc）
     Ready
 }
 
@@ -400,7 +401,10 @@ fun TerminalScreen(
         // ─────────────────────────────────────────────
         // 下载 / 解压进度弹窗
         // ─────────────────────────────────────────────
-        if (envState == EnvironmentState.Downloading || envState == EnvironmentState.Extracting) {
+        if (envState == EnvironmentState.Downloading ||
+            envState == EnvironmentState.Extracting ||
+            envState == EnvironmentState.Initializing
+        ) {
             Dialog(
                 onDismissRequest = {},
                 properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
@@ -418,13 +422,20 @@ fun TerminalScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.Start
                     ) {
+                        // 标题随状态变化
                         Text(
-                            text = if (envState == EnvironmentState.Downloading)
-                                "正在获取 Debian 系统镜像…" else "正在构建根文件系统…",
+                            text = when (envState) {
+                                EnvironmentState.Downloading   -> "正在获取 Debian 系统镜像…"
+                                EnvironmentState.Extracting    -> "正在构建根文件系统…"
+                                EnvironmentState.Initializing  -> "正在初始化运行环境…"
+                                else -> ""
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
+
                         if (envState == EnvironmentState.Downloading) {
+                            // 下载：显示带百分比的线性进度条
                             LinearProgressIndicator(
                                 progress = { downloadProgress },
                                 modifier = Modifier.fillMaxWidth(),
@@ -447,6 +458,7 @@ fun TerminalScreen(
                                 )
                             }
                         } else {
+                            // 解压 / 初始化：不定时 spinner
                             CircularProgressIndicator(
                                 modifier = Modifier
                                     .size(36.dp)
@@ -459,6 +471,36 @@ fun TerminalScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.align(Alignment.CenterHorizontally)
                             )
+
+                            // 初始化阶段：展示正在完成的配置项列表
+                            if (envState == EnvironmentState.Initializing) {
+                                val steps = listOf(
+                                    "APT 镜像源（USTC）",
+                                    "DNS 解析（阿里/腾讯）",
+                                    "主机名 & hosts",
+                                    "Shell 环境（.bashrc）",
+                                    "APT 优化配置"
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    steps.forEach { step ->
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "·",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = step,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

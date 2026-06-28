@@ -258,7 +258,7 @@ private fun FileTreeRow(
     onClick: () -> Unit
 ) {
     val node = row.node
-    val indentDp = (row.depth * 18 + 16).dp
+    val indentDp = (row.depth * 18 + 8).dp
 
     Row(
         modifier = Modifier
