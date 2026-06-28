@@ -110,16 +110,14 @@ fun TerminalScreen(
         if (cmd == "clear") terminalLines.clear()
         else vm.sendCommand(cmd)
         
+        // ── 因为输入框是完全静态常驻的节点，所以我们不需要做任何“强制弹出键盘”的补救 ──
+        // ── 输入法和焦点会极其自然地、安稳地保持不变，绝无丝毫闪烁 ──
         coroutineScope.launch {
-            // 延迟一小会儿，避开 LazyColumn 更新、重绘以及滚动导致的短暂焦点丢失，并确保文本框处于可见区域
-            delay(60)
-            try {
-                focusRequester.requestFocus()
-                keyboardController?.show()
-            } catch (e: Exception) {
-                e.printStackTrace()
+            delay(50)
+            if (envState == EnvironmentState.Ready && terminalLines.isNotEmpty()) {
+                listState.animateScrollToItem(terminalLines.size - 1)
             }
-            delay(200)
+            delay(150)
             enterGuard = false
         }
     }
@@ -189,7 +187,7 @@ fun TerminalScreen(
     // ── 智能随动滚动 ──
     LaunchedEffect(terminalLines.size, isKeyboardVisible) {
         if (envState == EnvironmentState.Ready && terminalLines.isNotEmpty()) {
-            listState.animateScrollToItem(terminalLines.size)
+            listState.animateScrollToItem(terminalLines.size - 1)
         }
     }
 
@@ -210,10 +208,11 @@ fun TerminalScreen(
                 ) { focusRequester.requestFocus() }
         ) {
             // A. 终端滚动输出区
+            // 使用 weight(1f, fill = false) 确保在内容少时自适应收缩，多时占满屏幕并可滚动
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(1f, fill = false)
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -238,70 +237,68 @@ fun TerminalScreen(
                         )
                     )
                 }
-
-                // 随流命令输入行
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        PromptPrefix()
-                        BasicTextField(
-                            value = currentInput,
-                            onValueChange = { newVal ->
-                                when {
-                                    // Ctrl+C 拦截
-                                    isCtrlPressed && newVal.text.lowercase().endsWith("c") -> {
-                                        terminalLines.add("[sandbox@debian:~]$ ^C")
-                                        terminalLines.add("❌ Process Interrupted (Ctrl+C)")
-                                        isCtrlPressed = false
-                                        currentInput = TextFieldValue("")
-                                        vm.restartShell()
-                                    }
-                                    // 换行符拦截：这里拦截部分键盘自动输入换行的情况
-                                    newVal.text.contains('\n') -> sendCurrentInput(newVal.text)
-                                    else -> currentInput = newVal
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(focusRequester)
-                                // 拦截物理键盘和部分输入法的按键回车事件
-                                .onPreviewKeyEvent { keyEvent ->
-                                    if (keyEvent.type == KeyEventType.KeyDown &&
-                                        (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)
-                                    ) {
-                                        sendCurrentInput(currentInput.text)
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                },
-                            enabled = envState == EnvironmentState.Ready,
-                            textStyle = TextStyle(
-                                color = Color.White,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp
-                            ),
-                            cursorBrush = SolidColor(Color.White),
-                            maxLines = 1,
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Send,
-                                keyboardType = KeyboardType.Text
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onSend = {
-                                    sendCurrentInput(currentInput.text)
-                                }
-                            )
-                        )
-                    }
-                }
             }
 
-            // B. Termius 风格工具栏
+            // B. 随流命令输入行 (将其放置于 LazyColumn 外部，使其在底层重排和滚动时绝对不被回收和销毁)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PromptPrefix()
+                BasicTextField(
+                    value = currentInput,
+                    onValueChange = { newVal ->
+                        when {
+                            // Ctrl+C 拦截
+                            isCtrlPressed && newVal.text.lowercase().endsWith("c") -> {
+                                terminalLines.add("[sandbox@debian:~]$ ^C")
+                                terminalLines.add("❌ Process Interrupted (Ctrl+C)")
+                                isCtrlPressed = false
+                                currentInput = TextFieldValue("")
+                                vm.restartShell()
+                            }
+                            // 换行符拦截：某些输入法会直接插入 \n
+                            newVal.text.contains('\n') -> sendCurrentInput(newVal.text)
+                            else -> currentInput = newVal
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester)
+                        // 拦截物理回车与软键盘 Enter 按键事件
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown &&
+                                (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)
+                            ) {
+                                sendCurrentInput(currentInput.text)
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                    enabled = envState == EnvironmentState.Ready,
+                    textStyle = TextStyle(
+                        color = Color.White,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp
+                    ),
+                    cursorBrush = SolidColor(Color.White),
+                    maxLines = 1,
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Send,
+                        keyboardType = KeyboardType.Text
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            sendCurrentInput(currentInput.text)
+                        }
+                    )
+                )
+            }
+
+            // C. Termius 风格工具栏
             if (isKeyboardVisible && envState == EnvironmentState.Ready) {
                 Column(
                     modifier = Modifier
