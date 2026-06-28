@@ -149,6 +149,15 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
                         if (usrLib.isDirectory)  { add("-b"); add("${usrLib.absolutePath}:/lib") }
                         if (usrLib.isDirectory)  { add("-b"); add("${usrLib.absolutePath}:/lib64") }
                         if (usrSbin.isDirectory) { add("-b"); add("${usrSbin.absolutePath}:/sbin") }
+                        // ── 项目目录绑定：让终端里能直接访问 App 内的项目文件 ──
+                        val internalProjects = File(context.filesDir, "projects")
+                        val externalProjects = context.getExternalFilesDir(null)
+                            ?.let { File(it, "projects") }
+                        if (internalProjects.isDirectory) {
+                            add("-b"); add("${internalProjects.absolutePath}:/projects")
+                        } else if (externalProjects?.isDirectory == true) {
+                            add("-b"); add("${externalProjects.absolutePath}:/projects")
+                        }
                         add(shellPath)
                     }
                     ProcessBuilder(cmd)

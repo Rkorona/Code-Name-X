@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -73,6 +74,7 @@ fun TerminalScreen(
     // ── 纯 UI 状态（切 Tab 可以重置，不需要保活）──
     val isKeyboardVisible = WindowInsets.isImeVisible
     val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var historyIndex by remember { mutableIntStateOf(-1) }
     var currentInput by remember { mutableStateOf(TextFieldValue("")) }
     var isCtrlPressed by remember { mutableStateOf(false) }
@@ -249,6 +251,8 @@ fun TerminalScreen(
                                         }
                                         currentInput = TextFieldValue("")
                                     }
+                                    // 发送后保持键盘展开，不让 IME 自动收起
+                                    keyboardController?.show()
                                 }
                             )
                         )
