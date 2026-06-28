@@ -117,24 +117,40 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 val pb = if (prootFile != null && prootFile.exists()) {
-                    // Debian trixie 使用 UsrMerge：/bin 是 usr/bin 的符号链接
-                    // PRoot 有时无法跟踪相对符号链接，需要检测真实路径
+                    // ─────────────────────────────────────────────
+                    // Debian trixie UsrMerge：/bin /lib /sbin 都是指向 usr/* 的符号链接。
+                    // 用 PRoot 的 -b host_path:guest_path 直接将真实目录挂载到 guest 的
+                    // 传统路径，完全绕过符号链接解析，保证 ELF 动态链接器可以被找到。
+                    // ─────────────────────────────────────────────
                     val shellPath = listOf("/usr/bin/bash", "/bin/bash", "/usr/bin/sh", "/bin/sh")
-                        .firstOrNull { File(rootfsDir, it.removePrefix("/")).let { f -> f.exists() || f.length() > 0 } }
-                        ?: "/bin/sh"
+                        .firstOrNull { path ->
+                            val f = File(rootfsDir, path.removePrefix("/"))
+                            f.exists() && !f.isDirectory
+                        } ?: "/bin/sh"
 
-                    val cmd = listOf(
-                        prootFile.absolutePath,
-                        "--link2symlink",   // 正确处理 UsrMerge 符号链接（如 /bin -> usr/bin）
-                        "-r", rootfsDir.absolutePath,
-                        "-0",
-                        "-w", "/root",
-                        "-b", "/dev",
-                        "-b", "/proc",
-                        "-b", "/sys",
-                        "-b", "/dev/urandom",  // 某些 apt 操作需要随机数源
-                        shellPath
-                    )
+                    val cmd = buildList {
+                        add(prootFile.absolutePath)
+                        add("--link2symlink")
+                        add("-r"); add(rootfsDir.absolutePath)
+                        add("-0")
+                        add("-w"); add("/root")
+                        // 标准设备节点绑定
+                        add("-b"); add("/dev")
+                        add("-b"); add("/proc")
+                        add("-b"); add("/sys")
+                        add("-b"); add("/dev/urandom")
+                        // ── UsrMerge 关键修复：将 rootfs 内的真实 usr/* 目录
+                        //    直接绑定到 guest 的 /bin /lib /sbin /lib64，
+                        //    确保 ELF interpreter (ld-linux-aarch64.so.1) 可被找到 ──
+                        val usrBin  = File(rootfsDir, "usr/bin")
+                        val usrLib  = File(rootfsDir, "usr/lib")
+                        val usrSbin = File(rootfsDir, "usr/sbin")
+                        if (usrBin.isDirectory)  { add("-b"); add("${usrBin.absolutePath}:/bin") }
+                        if (usrLib.isDirectory)  { add("-b"); add("${usrLib.absolutePath}:/lib") }
+                        if (usrLib.isDirectory)  { add("-b"); add("${usrLib.absolutePath}:/lib64") }
+                        if (usrSbin.isDirectory) { add("-b"); add("${usrSbin.absolutePath}:/sbin") }
+                        add(shellPath)
+                    }
                     ProcessBuilder(cmd)
                 } else {
                     withContext(Dispatchers.Main) {
