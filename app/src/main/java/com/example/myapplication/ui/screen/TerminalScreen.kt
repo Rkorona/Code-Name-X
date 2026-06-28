@@ -15,8 +15,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -75,8 +73,7 @@ enum class EnvironmentState {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TerminalScreen(
-    modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -334,21 +331,13 @@ fun TerminalScreen(
                     focusRequester.requestFocus()
                 }
         ) {
-            // 0. Termius 风格顶部会话标签栏
-            TerminalTopBar(
-                sessionLabel = "Debian 终端",
-                envState = envState,
-                onBack = onBack,
-                onNewSession = { startNewShell() }
-            )
-
             // A. 数据流交互滚动区（包含日志与随流输入框）
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 // 1. 历史日志组
@@ -751,90 +740,6 @@ fun TerminalKeyDivider() {
             .fillMaxHeight(0.55f) // 分割线仅占用 55% 的高度并垂直居中
             .background(Color(0xFF2E384D))
     )
-}
-
-// ─────────────────────────────────────────────
-// 封装：Termius 风格顶部会话标签栏
-// 还原 Termius 的圆角标签胶囊 + 状态指示灯 + 新建会话按钮布局
-// ─────────────────────────────────────────────
-@Composable
-fun TerminalTopBar(
-    sessionLabel: String,
-    envState: EnvironmentState,
-    onBack: (() -> Unit)?,
-    onNewSession: () -> Unit
-) {
-    val headerBg = Color(0xFF1C2330)
-    val pillBg = Color(0xFF2A3346)
-    val dividerColor = Color(0xFF2E384D)
-    val statusColor = when (envState) {
-        EnvironmentState.Ready -> Color(0xFF22C55E)
-        EnvironmentState.Downloading, EnvironmentState.Extracting -> Color(0xFFF59E0B)
-        EnvironmentState.NotInstalled, EnvironmentState.Checking -> Color(0xFF64748B)
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .background(headerBg)
-            .drawBehind {
-                drawLine(
-                    color = dividerColor,
-                    start = Offset(0f, size.height),
-                    end = Offset(size.width, size.height),
-                    strokeWidth = 1.dp.toPx()
-                )
-            }
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "返回",
-                    tint = Color(0xFFE2E8F0)
-                )
-            }
-        } else {
-            Spacer(modifier = Modifier.width(6.dp))
-        }
-
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = pillBg
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(statusColor)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = sessionLabel,
-                    color = Color(0xFFE2E8F0),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        IconButton(onClick = onNewSession) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "新建终端会话",
-                tint = Color(0xFFE2E8F0)
-            )
-        }
-    }
 }
 
 // ─────────────────────────────────────────────
