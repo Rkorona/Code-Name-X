@@ -29,7 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutHeading
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -51,7 +51,6 @@ import kotlin.math.sin
 // ─────────────────────────────────────────────
 // 六边形 Shape（Node.js 图标专用）
 // ─────────────────────────────────────────────
-
 private class HexagonShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val cx = size.width / 2f
@@ -72,7 +71,6 @@ private class HexagonShape : Shape {
 // ─────────────────────────────────────────────
 // 相对时间格式化
 // ─────────────────────────────────────────────
-
 fun formatRelativeTime(lastModifiedMs: Long, nowMs: Long = System.currentTimeMillis()): String {
     val diff = nowMs - lastModifiedMs
     return when {
@@ -88,7 +86,6 @@ fun formatRelativeTime(lastModifiedMs: Long, nowMs: Long = System.currentTimeMil
 // ─────────────────────────────────────────────
 // 排序方式枚举
 // ─────────────────────────────────────────────
-
 enum class ProjectSortOrder(val label: String) {
     DEFAULT("默认顺序"),
     NAME_ASC("名称 A → Z"),
@@ -100,19 +97,11 @@ enum class ProjectSortOrder(val label: String) {
 // ─────────────────────────────────────────────
 // 项目列表排序 + 过滤工具函数
 // ─────────────────────────────────────────────
-
-/**
- * 根据搜索词和排序方式对项目列表进行过滤和排序。
- * [projects] 原始列表（顺序代表创建时间，index 0 最新）
- * [query]    搜索关键词（忽略大小写，空串 = 不过滤）
- * [order]    排序方式
- */
 private fun filterAndSortProjects(
     projects: List<Project>,
     query: String,
     order: ProjectSortOrder
 ): List<Project> {
-    // 1. 过滤：按名称或描述匹配搜索词
     val filtered = if (query.isBlank()) {
         projects
     } else {
@@ -123,25 +112,19 @@ private fun filterAndSortProjects(
         }
     }
 
-    // 2. 排序
     return when (order) {
-        ProjectSortOrder.DEFAULT -> filtered  // 保持原顺序（newest first）
-
+        ProjectSortOrder.DEFAULT -> filtered
         ProjectSortOrder.NAME_ASC ->
             filtered.sortedWith { a, b -> String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name) }
-
         ProjectSortOrder.NAME_DESC ->
             filtered.sortedWith { a, b -> String.CASE_INSENSITIVE_ORDER.compare(b.name, a.name) }
-
         ProjectSortOrder.TYPE_LOCAL_FIRST ->
-            // 多选择器 compareBy：先按类型（LOCAL=0，其他=1），再按名称忽略大小写
             filtered.sortedWith(
                 compareBy<Project>(
                     { if (it.type == ProjectType.LOCAL) 0 else 1 },
                     { it.name.lowercase() }
                 )
             )
-
         ProjectSortOrder.TYPE_GITHUB_FIRST ->
             filtered.sortedWith(
                 compareBy<Project>(
@@ -153,9 +136,8 @@ private fun filterAndSortProjects(
 }
 
 // ─────────────────────────────────────────────
-// HomeScreen
+// HomeScreen (主骨架重构)
 // ─────────────────────────────────────────────
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -199,166 +181,187 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            if (isSearchActive) {
-                // ── 搜索模式 TopAppBar ──────────────────────────
-                TopAppBar(
-                    navigationIcon = {
-                        IconButton(
-                            onClick = {
-                                isSearchActive = false
-                                searchQuery = ""
-                                keyboardController?.hide()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "关闭搜索",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    },
-                    title = {
-                        TextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(searchFocusRequester),
-                            placeholder = {
-                                Text(
-                                    text = "搜索项目名称或路径…",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(
-                                onSearch = { keyboardController?.hide() }
-                            ),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                                errorIndicatorColor = Color.Transparent,
-                            ),
-                            textStyle = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    actions = {
-                        // 有内容时显示清空按钮
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "清空搜索词",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            } else {
-                // ── 普通模式 TopAppBar ──────────────────────────
-                TopAppBar(
-                    navigationIcon = {
-                        IconButton(onClick = {}) {
-                            Icon(
-                                imageVector = Icons.Outlined.Hub,
-                                contentDescription = "Logo",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    },
-                    title = {
-                        Text(
-                            text = "Projects",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    },
-                    actions = {
-                        // 搜索按钮
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "搜索",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        // 排序按钮（AZ 图标）+ 下拉菜单
-                        Box {
-                            IconButton(onClick = { sortMenuExpanded = true }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.SortByAlpha,
-                                    contentDescription = "排序",
-                                    tint = if (sortOrder == ProjectSortOrder.DEFAULT)
-                                        MaterialTheme.colorScheme.onSurface
-                                    else
-                                        MaterialTheme.colorScheme.primary  // 激活状态用主色提示
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = sortMenuExpanded,
-                                onDismissRequest = { sortMenuExpanded = false }
-                            ) {
-                                ProjectSortOrder.entries.forEach { order ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = order.label,
-                                                color = if (sortOrder == order)
-                                                    MaterialTheme.colorScheme.primary
-                                                else
-                                                    MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = if (sortOrder == order)
-                                                    FontWeight.SemiBold
-                                                else
-                                                    FontWeight.Normal
-                                            )
-                                        },
-                                        onClick = {
-                                            sortOrder = order
-                                            sortMenuExpanded = false
-                                        },
-                                        leadingIcon = if (sortOrder == order) ({
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "已选中",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }) else null
+            // 根据不同的 Tab 渲染对应的顶栏，保证视觉隔离
+            when (selectedTab) {
+                0 -> { // 项目列表顶栏
+                    if (isSearchActive) {
+                        TopAppBar(
+                            navigationIcon = {
+                                IconButton(
+                                    onClick = {
+                                        isSearchActive = false
+                                        searchQuery = ""
+                                        keyboardController?.hide()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "关闭搜索",
+                                        tint = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                            },
+                            title = {
+                                TextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(searchFocusRequester),
+                                    placeholder = {
+                                        Text(
+                                            text = "搜索项目名称或路径…",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(
+                                        onSearch = { keyboardController?.hide() }
+                                    ),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        disabledIndicatorColor = Color.Transparent,
+                                        errorIndicatorColor = Color.Transparent,
+                                    ),
+                                    textStyle = MaterialTheme.typography.bodyLarge,
+                                )
+                            },
+                            actions = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "清空搜索词",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    } else {
+                        TopAppBar(
+                            navigationIcon = {
+                                IconButton(onClick = {}) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Hub,
+                                        contentDescription = "Logo",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            },
+                            title = {
+                                Text(
+                                    text = "Projects",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            actions = {
+                                IconButton(onClick = { isSearchActive = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "搜索",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Box {
+                                    IconButton(onClick = { sortMenuExpanded = true }) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.SortByAlpha,
+                                            contentDescription = "排序",
+                                            tint = if (sortOrder == ProjectSortOrder.DEFAULT)
+                                                MaterialTheme.colorScheme.onSurface
+                                            else
+                                                MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = sortMenuExpanded,
+                                        onDismissRequest = { sortMenuExpanded = false }
+                                    ) {
+                                        ProjectSortOrder.entries.forEach { order ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = order.label,
+                                                        color = if (sortOrder == order)
+                                                            MaterialTheme.colorScheme.primary
+                                                        else
+                                                            MaterialTheme.colorScheme.onSurface,
+                                                        fontWeight = if (sortOrder == order)
+                                                            FontWeight.SemiBold
+                                                        else
+                                                            FontWeight.Normal
+                                                    )
+                                                },
+                                                onClick = {
+                                                    sortOrder = order
+                                                    sortMenuExpanded = false
+                                                },
+                                                leadingIcon = if (sortOrder == order) ({
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "已选中",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }) else null
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    }
+                }
+                1 -> {
+                    TopAppBar(
+                        title = { Text("GitHub Repositories", fontWeight = FontWeight.Bold) },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
-                )
+                }
+                2 -> { // 全新终端顶栏
+                    TopAppBar(
+                        title = { Text("Linux Terminal (Debian)", fontWeight = FontWeight.Bold) },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
+                3 -> {
+                    TopAppBar(
+                        title = { Text("设置", fontWeight = FontWeight.Bold) },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddSheet = true },
-                shape = RoundedCornerShape(16.dp),
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(64.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "新建项目",
-                    modifier = Modifier.size(28.dp)
-                )
+            // 只在项目列表页 (Tab 0) 显示创建项目的悬浮按钮
+            if (selectedTab == 0) {
+                FloatingActionButton(
+                    onClick = { showAddSheet = true },
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "新建项目",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         },
         bottomBar = {
@@ -368,14 +371,45 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
-        ProjectList(
-            projects = displayedProjects,
-            searchQuery = searchQuery,
-            sortOrder = sortOrder,
-            isSearchActive = isSearchActive,
-            onProjectClick = onProjectClick,
-            modifier = Modifier.padding(innerPadding)
-        )
+        // 根据选中的 Tab 决定页面主体的渲染内容
+        when (selectedTab) {
+            0 -> {
+                ProjectList(
+                    projects = displayedProjects,
+                    searchQuery = searchQuery,
+                    sortOrder = sortOrder,
+                    isSearchActive = isSearchActive,
+                    onProjectClick = onProjectClick,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+            1 -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("GitHub 克隆管理页面（预留）", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            2 -> {
+                // 渲染全新的 PRoot Debian 终端交互页面
+                TerminalScreen(
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+            3 -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("全局设置页面（预留）", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 
     // ── Bottom Sheet：新建/导入项目 ──────────────────────
@@ -406,7 +440,6 @@ fun HomeScreen(
 // ─────────────────────────────────────────────
 // 项目列表（支持搜索结果提示 + 空态）
 // ─────────────────────────────────────────────
-
 @Composable
 fun ProjectList(
     projects: List<Project>,
@@ -416,7 +449,6 @@ fun ProjectList(
     sortOrder: ProjectSortOrder = ProjectSortOrder.DEFAULT,
     isSearchActive: Boolean = false,
 ) {
-    // 空态
     if (projects.isEmpty()) {
         Box(
             modifier = modifier.fillMaxSize(),
@@ -467,7 +499,6 @@ fun ProjectList(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 区块标题：显示数量和当前排序方式
         item {
             Row(
                 modifier = Modifier
@@ -476,7 +507,6 @@ fun ProjectList(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 搜索时显示结果数量
                 if (isSearchActive && searchQuery.isNotBlank()) {
                     Text(
                         text = "找到 ${projects.size} 个项目",
@@ -492,7 +522,6 @@ fun ProjectList(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-                // 非默认排序时显示排序标签
                 if (sortOrder != ProjectSortOrder.DEFAULT) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -512,7 +541,6 @@ fun ProjectList(
             }
         }
 
-        // 项目卡片
         items(projects, key = { it.id }) { project ->
             ProjectCard(
                 project = project,
@@ -523,16 +551,14 @@ fun ProjectList(
 }
 
 // ─────────────────────────────────────────────
-// 项目卡片
+// 项目卡片及语言图标组件（保持不变）
 // ─────────────────────────────────────────────
-
 @Composable
 fun ProjectCard(
     project: Project,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 每隔 30 秒触发一次重组，保持相对时间显示及时更新
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -545,9 +571,7 @@ fun ProjectCard(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
@@ -556,13 +580,9 @@ fun ProjectCard(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ── 语言图标 ──────────────────────────────────
             LanguageIcon(language = project.language)
-
             Spacer(modifier = Modifier.width(14.dp))
-
             Column(modifier = Modifier.weight(1f)) {
-                // ── 项目名 + 类型徽章（内联紧跟） ────────────
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -574,13 +594,11 @@ fun ProjectCard(
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        // fill=false：内容短时徽章紧跟名称；内容长时截断后徽章紧跟
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     InlineTypeBadge(type = project.type)
                 }
                 Spacer(modifier = Modifier.height(3.dp))
-                // ── 上次修改时间（相对，tickMs 变化时自动刷新） ──
                 Text(
                     text = formatRelativeTime(project.lastModified, tickMs),
                     style = MaterialTheme.typography.bodySmall,
@@ -592,19 +610,9 @@ fun ProjectCard(
     }
 }
 
-// ─────────────────────────────────────────────
-// 语言图标（替代原 ProjectIcon）
-// ─────────────────────────────────────────────
-
 @Composable
-fun LanguageIcon(
-    language: ProjectLanguage,
-    modifier: Modifier = Modifier
-) {
-    // Node.js 使用六边形轮廓，其余使用圆角矩形
-    val shape: Shape = if (language == ProjectLanguage.NODEJS) HexagonShape()
-                       else RoundedCornerShape(12.dp)
-
+fun LanguageIcon(language: ProjectLanguage, modifier: Modifier = Modifier) {
+    val shape: Shape = if (language == ProjectLanguage.NODEJS) HexagonShape() else RoundedCornerShape(12.dp)
     Box(
         modifier = modifier
             .size(48.dp)
@@ -626,24 +634,11 @@ fun LanguageIcon(
     }
 }
 
-// ─────────────────────────────────────────────
-// 内联类型徽章（紧跟项目名后）
-// ─────────────────────────────────────────────
-
 @Composable
 fun InlineTypeBadge(type: ProjectType) {
-    val bgColor = when (type) {
-        ProjectType.LOCAL  -> MaterialTheme.colorScheme.primaryContainer
-        ProjectType.GITHUB -> MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val textColor = when (type) {
-        ProjectType.LOCAL  -> MaterialTheme.colorScheme.onPrimaryContainer
-        ProjectType.GITHUB -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val label = when (type) {
-        ProjectType.LOCAL  -> "LOCAL"
-        ProjectType.GITHUB -> "GITHUB"
-    }
+    val bgColor = if (type == ProjectType.LOCAL) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = if (type == ProjectType.LOCAL) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val label = if (type == ProjectType.LOCAL) "LOCAL" else "GITHUB"
     Surface(shape = RoundedCornerShape(4.dp), color = bgColor) {
         Text(
             text = label,
@@ -656,46 +651,6 @@ fun InlineTypeBadge(type: ProjectType) {
         )
     }
 }
-
-// ─────────────────────────────────────────────
-// 徽章组件
-// ─────────────────────────────────────────────
-
-@Composable
-fun LocalBadge() {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.primaryContainer
-    ) {
-        Text(
-            text = "LOCAL",
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-fun GithubBadge() {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Text(
-            text = "GITHUB",
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-// ─────────────────────────────────────────────
-// 头像组（装饰性）
-// ─────────────────────────────────────────────
 
 @Composable
 fun AvatarGroup() {
