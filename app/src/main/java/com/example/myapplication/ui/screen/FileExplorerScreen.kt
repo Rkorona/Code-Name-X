@@ -273,7 +273,7 @@ private fun FileTreeRow(
                 else Icons.Outlined.Folder,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = Color(0xFFFFB74D) // 文件夹琥珀色
+                tint = Color(0xFF7C9CBF) // 文件夹琥珀色
             )
         } else {
             Box(

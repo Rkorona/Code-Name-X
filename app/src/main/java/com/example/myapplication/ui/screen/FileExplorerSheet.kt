@@ -777,7 +777,7 @@ private fun SheetFileTreeRow(row: SheetDisplayRow, isExpanded: Boolean, onClick:
         if (node.isDirectory) {
             Icon(Icons.Outlined.ChevronRight, null, modifier = Modifier.size(18.dp).rotate(chevronDeg), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
             Spacer(Modifier.width(4.dp))
-            Icon(imageVector = if (isExpanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color(0xFFFFB74D))
+            Icon(imageVector = if (isExpanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color(0xFF7C9CBF))
         } else {
             Spacer(Modifier.width(22.dp))
             SheetFileExtBadge(node.extension)
