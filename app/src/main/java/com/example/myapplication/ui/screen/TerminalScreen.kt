@@ -146,19 +146,20 @@ fun TerminalScreen(
                                 builtInZoomControls = false
                                 displayZoomControls = false
                             }
-                            val assetLoader = WebViewAssetLoader.Builder()
-                                .addPathHandler(
-                                    "/assets/",
-                                    WebViewAssetLoader.AssetsPathHandler(ctx)
-                                )
-                                .build()
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldInterceptRequest(
-                                    view: WebView,
-                                    request: WebResourceRequest
-                                ): WebResourceResponse? =
-                                    assetLoader.shouldInterceptRequest(request.url)
+                            settings.allowFileAccess = true
+                            settings.allowFileAccessFromFileURLs = true
+                            settings.allowUniversalAccessFromFileURLs = true
+
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage): Boolean {
+                                    android.util.Log.d(
+                                        "TerminalScreen",
+                                        "WebView console: ${consoleMessage.message()} (${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
+                                    )
+                                    return true
+                                }
                             }
+
                             addJavascriptInterface(
                                 TerminalJsBridge(
                                     onInput  = { data -> vm.sendInput(data) },
@@ -166,7 +167,7 @@ fun TerminalScreen(
                                 ),
                                 "Android"
                             )
-                            loadUrl("https://appassets.androidplatform.net/assets/terminal/index.html")
+                            loadUrl("file:///android_asset/terminal/index.html")
                             webViewRef.value = this
                         }
                     },

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-  <link rel="stylesheet" href="xterm.css">
+  <link rel="stylesheet" href="file:///android_asset/terminal/xterm.css">
   <style>
     * { box-sizing: border-box; }
     html, body {
@@ -24,8 +24,8 @@
 <body>
   <div id="terminal"></div>
 
-  <script src="xterm.js"></script>
-  <script src="xterm-addon-fit.js"></script>
+  <script src="file:///android_asset/terminal/xterm.js"></script>
+  <script src="file:///android_asset/terminal/xterm-addon-fit.js"></script>
   <script>
     var term = new Terminal({
       theme: {
@@ -92,6 +92,14 @@
     });
 
     // ── Kotlin → terminal (PTY output) ──────────────────────────
+    function bytesToString(bytes) {
+      var result = '';
+      for (var i = 0; i < bytes.length; i++) {
+        result += String.fromCharCode(bytes[i]);
+      }
+      return result;
+    }
+
     window.writeOutput = function(base64) {
       try {
         var binary = atob(base64);
@@ -99,8 +107,10 @@
         for (var i = 0; i < binary.length; i++) {
           bytes[i] = binary.charCodeAt(i);
         }
-        term.write(bytes);
-      } catch(e) {}
+        term.write(bytesToString(bytes));
+      } catch(e) {
+        console.error('writeOutput error', e);
+      }
     };
 
     // ── Inject raw bytes (toolbar special keys) ──────────────────
@@ -111,9 +121,12 @@
         for (var i = 0; i < binary.length; i++) {
           bytes[i] = binary.charCodeAt(i);
         }
-        term.write(bytes);          // echo locally
+        var text = bytesToString(bytes);
+        term.write(text);          // echo locally
         Android.sendInput(base64); // also send to PTY
-      } catch(e) {}
+      } catch(e) {
+        console.error('injectInput error', e);
+      }
     };
 
     // ── Apply settings ───────────────────────────────────────────
