@@ -94,13 +94,7 @@
     });
 
     // ── Kotlin → terminal (PTY output) ──────────────────────────
-    function bytesToString(bytes) {
-      var result = '';
-      for (var i = 0; i < bytes.length; i++) {
-        result += String.fromCharCode(bytes[i]);
-      }
-      return result;
-    }
+    var __utf8decoder = new TextDecoder();
 
     window.writeOutput = function(base64) {
       try {
@@ -117,7 +111,14 @@
           }
           console.log('writeOutput preview hex:', preview);
         } catch(_e) {}
-        term.write(bytesToString(bytes));
+        try {
+          term.write(__utf8decoder.decode(bytes));
+        } catch (e) {
+          // fallback to naive conversion
+          var s = '';
+          for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+          term.write(s);
+        }
       } catch(e) {
         console.error('writeOutput error', e);
       }
@@ -128,7 +129,13 @@
       try {
         console.log('injectInput called, len=' + base64.length);
         var binary = atob(base64);
-        term.write(binary);          // echo locally
+        try {
+          var bytes = new Uint8Array(binary.length);
+          for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          term.write(__utf8decoder.decode(bytes));
+        } catch (e) {
+          term.write(binary);
+        }
         Android.sendInput(base64); // also send to PTY
       } catch(e) {
         console.error('injectInput error', e);
