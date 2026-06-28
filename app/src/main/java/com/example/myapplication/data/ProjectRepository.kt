@@ -23,6 +23,10 @@ class ProjectRepository(context: Context) {
         dao.deleteProjectById(id)
     }
 
+    suspend fun updateProjectLanguage(id: String, language: com.example.myapplication.ui.model.ProjectLanguage) {
+        dao.updateProjectLanguage(id, language.ordinal.toLong())
+    }
+
     private fun ProjectEntity.toProject(): Project = Project(
         id = id,
         name = name,

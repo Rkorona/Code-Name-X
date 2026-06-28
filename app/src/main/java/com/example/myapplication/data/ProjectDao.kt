@@ -16,4 +16,7 @@ interface ProjectDao {
 
     @Query("DELETE FROM projects WHERE id = :id")
     suspend fun deleteProjectById(id: String)
+
+    @Query("UPDATE projects SET iconColorLong = :languageOrdinal WHERE id = :id")
+    suspend fun updateProjectLanguage(id: String, languageOrdinal: Long)
 }

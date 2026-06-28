@@ -16,6 +16,7 @@ import com.example.myapplication.ui.model.ProjectType
 import com.example.myapplication.ui.screen.EditorScreen
 import com.example.myapplication.ui.screen.HomeScreen
 import kotlinx.coroutines.launch
+import java.io.File
 
 // ─────────────────────────────────────────────
 // 导航路由定义
@@ -40,6 +41,22 @@ fun AppNavigation() {
     // 通过 Repository 从数据库加载项目列表
     val repository = remember { ProjectRepository(context) }
     val projects by repository.projects.collectAsState(initial = emptyList())
+
+    // 对语言仍为 UNKNOWN 且路径为普通文件系统路径的项目，后台重新扫描并更新
+    LaunchedEffect(projects) {
+        projects.filter { it.language == ProjectLanguage.UNKNOWN && it.localPath != null }
+            .forEach { project ->
+                val path = project.localPath!!
+                // 只处理文件系统路径（不处理 content:// SAF URI）
+                if (!path.startsWith("content://")) {
+                    val files = File(path).list()?.toList() ?: emptyList()
+                    val detected = ProjectLanguage.detect(files)
+                    if (detected != ProjectLanguage.UNKNOWN) {
+                        scope.launch { repository.updateProjectLanguage(project.id, detected) }
+                    }
+                }
+            }
+    }
 
     // 弹窗状态
     var showNewLocalDialog by remember { mutableStateOf(false) }

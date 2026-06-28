@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -72,8 +73,8 @@ private class HexagonShape : Shape {
 // 相对时间格式化
 // ─────────────────────────────────────────────
 
-fun formatRelativeTime(lastModifiedMs: Long): String {
-    val diff = System.currentTimeMillis() - lastModifiedMs
+fun formatRelativeTime(lastModifiedMs: Long, nowMs: Long = System.currentTimeMillis()): String {
+    val diff = nowMs - lastModifiedMs
     return when {
         diff < 60_000L         -> "刚刚"
         diff < 3_600_000L      -> "${diff / 60_000} 分钟前"
@@ -531,6 +532,15 @@ fun ProjectCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // 每隔 30 秒触发一次重组，保持相对时间显示及时更新
+    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            tickMs = System.currentTimeMillis()
+        }
+    }
+
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
@@ -570,9 +580,9 @@ fun ProjectCard(
                     InlineTypeBadge(type = project.type)
                 }
                 Spacer(modifier = Modifier.height(3.dp))
-                // ── 上次修改时间（相对） ──────────────────────
+                // ── 上次修改时间（相对，tickMs 变化时自动刷新） ──
                 Text(
-                    text = formatRelativeTime(project.lastModified),
+                    text = formatRelativeTime(project.lastModified, tickMs),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
