@@ -1,6 +1,5 @@
 package com.example.myapplication.ui.screen
 
-import androidx.compose.ui.graphics.StrokeCap
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -59,7 +59,7 @@ fun TerminalScreen(
     // ── 状态控制 ──
     var envState by remember { mutableStateOf(EnvironmentState.Checking) }
     var downloadProgress by remember { mutableFloatStateOf(0f) }
-    var currentStatusMessage by remember { mutableStateOf("正在初始化环境…") }
+    var currentStatusMessage by remember { mutableStateOf("正在等待指令…") }
 
     // ── 终端控制台流 ──
     val terminalLines = remember { mutableStateListOf<String>() }
@@ -68,23 +68,25 @@ fun TerminalScreen(
     // ── 核心路径定义 ──
     val rootfsDir = remember { File(context.filesDir, "debian_rootfs") }
     val tarXzFile = remember { File(context.cacheDir, "rootfs.tar.xz") }
+    // 目标高版本镜像源
     val imageUrl = "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260627_14%3A22/rootfs.tar.xz"
 
     // ── 终端样式配置 ──
     val terminalBackground = Color(0xFF000000)
     val terminalTextColor = Color(0xFF00FF00)
 
-    // ── 启动时自动检测 Debian 基础目录是否健全 ──
+    // ── 自动检测现存 Debian 环境是否健全 ──
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            // 通过检测 /bin/sh 是否存在，来判断基础系统是否成功解压部署过
             val shExec = File(rootfsDir, "bin/sh")
             if (shExec.exists() && rootfsDir.isDirectory) {
                 envState = EnvironmentState.Ready
-                terminalLines.add("Welcome to Debian GNU/Linux 13 (trixie) via PRoot!")
-                terminalLines.add("System architecture: aarch64 (Android sandboxed)")
-                terminalLines.add("Debian rootfs detected successfully.")
-                terminalLines.add("")
+                withContext(Dispatchers.Main) {
+                    terminalLines.add("Welcome to Debian GNU/Linux 12 (bookworm) via PRoot!")
+                    terminalLines.add("System architecture: aarch64 (Android sandboxed)")
+                    terminalLines.add("Debian rootfs detected successfully.")
+                    terminalLines.add("")
+                }
             } else {
                 envState = EnvironmentState.NotInstalled
             }
@@ -93,7 +95,7 @@ fun TerminalScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         // ─────────────────────────────────────────────
-        // 1. 标准控制台 UI 渲染
+        // 1. 标准控制台内核层 UI
         // ─────────────────────────────────────────────
         Column(
             modifier = Modifier
@@ -182,18 +184,17 @@ fun TerminalScreen(
         }
 
         // ─────────────────────────────────────────────
-        // 2. 弹窗层：未安装时的提示引导弹窗
+        // 2. 改造后的安装提示弹窗（支持渲染实时错误日志）
         // ─────────────────────────────────────────────
         if (envState == EnvironmentState.NotInstalled) {
             AlertDialog(
-                onDismissRequest = { /* 强力禁止点击外部关闭 */ },
+                onDismissRequest = { },
                 confirmButton = {
                     Button(
                         onClick = {
                             envState = EnvironmentState.Downloading
                             coroutineScope.launch {
                                 val downloadSuccess = performDownloadRootfs(
-                                    context = context,
                                     downloadUrl = imageUrl,
                                     targetFile = tarXzFile,
                                     onProgress = { progress -> downloadProgress = progress },
@@ -214,11 +215,11 @@ fun TerminalScreen(
                                         terminalLines.add("System environment ready. Enjoy full Linux terminal ecosystem.")
                                     } else {
                                         envState = EnvironmentState.NotInstalled
-                                        currentStatusMessage = "❌ 解压失败，请检查存储空间后重试"
+                                        // 保持 currentStatusMessage 里的解压错误字样
                                     }
                                 } else {
                                     envState = EnvironmentState.NotInstalled
-                                    currentStatusMessage = "❌ 下载失败，请检查网络连接后重试"
+                                    // 保持 currentStatusMessage 里的下载错误字样
                                 }
                             }
                         }
@@ -227,17 +228,39 @@ fun TerminalScreen(
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { /* 可在此处引导退回至 Projects Tab 等逻辑 */ }) {
+                    TextButton(onClick = { }) {
                         Text("暂不配置", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 title = { Text("配置 Linux 开发运行环境", fontWeight = FontWeight.Bold) },
                 text = {
-                    Text(
-                        text = "检测到应用尚未安装 Debian Linux 系统容器。运行多语言代码、格式化程序以及启动高级 LSP 服务需要下载并解压大约 90MB 的核心基础包。\n\n建议在 Wi-Fi 网络环境下进行该操作。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        lineHeight = 20.sp
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "检测到应用尚未安装 Debian Linux 系统容器。运行多语言代码、格式化程序以及启动高级 LSP 服务需要下载并解压大约 90MB 的核心基础包。\n\n建议在 Wi-Fi 网络环境下进行该操作。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 20.sp
+                        )
+                        
+                        // 亮点：如果失败了，直接在这里把报错信息怼在用户脸上，拒绝一抹黑！
+                        if (currentStatusMessage.startsWith("❌")) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = currentStatusMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+                    }
                 },
                 shape = RoundedCornerShape(28.dp),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -245,7 +268,7 @@ fun TerminalScreen(
         }
 
         // ─────────────────────────────────────────────
-        // 3. 弹窗层：下载或解压过程中的不可取消进度弹窗
+        // 3. 弹窗层：全锁定下载与部署进度长效 Dialog
         // ─────────────────────────────────────────────
         if (envState == EnvironmentState.Downloading || envState == EnvironmentState.Extracting) {
             Dialog(
@@ -315,10 +338,9 @@ fun TerminalScreen(
 }
 
 // ─────────────────────────────────────────────
-// 核心后台业务层：全线程安全的网络下载器
+// 强力高防网络下载引擎（支持多重手动重定向 + UA 伪装）
 // ─────────────────────────────────────────────
 private suspend fun performDownloadRootfs(
-    context: Context,
     downloadUrl: String,
     targetFile: File,
     onProgress: (Float) -> Unit,
@@ -327,24 +349,66 @@ private suspend fun performDownloadRootfs(
     var connection: HttpURLConnection? = null
     var inputStream: BufferedInputStream? = null
     var outputStream: FileOutputStream? = null
+    
+    var currentUrl = downloadUrl
+    var redirectCount = 0
+    val maxRedirects = 5
+    var downloadSuccess = false
 
     try {
         if (targetFile.exists()) {
-            targetFile.delete() // 确保清理旧的残余下载文件
+            targetFile.delete()
         }
-        
-        onStatusChanged("正在建立数据网络连接…")
-        val url = URL(downloadUrl)
-        connection = url.openConnection() as HttpURLConnection
-        connection.connectTimeout = 15000
-        connection.readTimeout = 30000
-        connection.connect()
 
-        if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+        // 核心重定向追踪循环
+        while (redirectCount < maxRedirects) {
+            withContext(Dispatchers.Main) { onStatusChanged("正在建立安全数据连接…") }
+            val url = URL(currentUrl)
+            connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = 15000
+            connection.readTimeout = 30000
+            connection.instanceFollowRedirects = false // 关闭原生混淆，由我们精确掌控
+            
+            // 重要：注入标准浏览器 User-Agent，防止开源镜像站因安全审查拦截直接返回 403
+            connection.setRequestProperty(
+                "User-Agent", 
+                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+            )
+
+            val status = connection.responseCode
+            
+            // 判定是否属于 HTTP 重定向家族（301, 302, 303, 307, 308）
+            if (status == HttpURLConnection.HTTP_MOVED_PERM || 
+                status == HttpURLConnection.HTTP_MOVED_TEMP || 
+                status == 303 || status == 307 || status == 308) {
+                
+                val newUrl = connection.getHeaderField("Location")
+                if (!newUrl.isNullOrBlank()) {
+                    currentUrl = newUrl
+                    redirectCount++
+                    connection.disconnect()
+                    continue // 跃迁到下一级 CDN 节点
+                }
+            }
+
+            if (status == HttpURLConnection.HTTP_OK) {
+                downloadSuccess = true
+                break // 成功驻留有效资源节点
+            } else {
+                withContext(Dispatchers.Main) { 
+                    onStatusChanged("❌ 服务器拒绝请求: HTTP $status (可能节点正忙)") 
+                }
+                return@withContext false
+            }
+        }
+
+        if (!downloadSuccess) {
+            withContext(Dispatchers.Main) { onStatusChanged("❌ 错误: CDN 重定向次数过多，陷入环路") }
             return@withContext false
         }
 
-        val fileLength = connection.contentLengthLong
+        // ── 开始执行正式的大文件数据流传输 ──
+        val fileLength = connection!!.contentLengthLong
         inputStream = BufferedInputStream(connection.inputStream, 16384)
         outputStream = FileOutputStream(targetFile)
 
@@ -355,23 +419,38 @@ private suspend fun performDownloadRootfs(
         while (inputStream.read(data).also { bytesRead = it } != -1) {
             totalBytesRead += bytesRead
             outputStream.write(data, 0, bytesRead)
-            
+
             if (fileLength > 0) {
                 val progress = totalBytesRead.toFloat() / fileLength.toFloat()
-                // 实时换算为 MB 单位显示给用户
                 val readMb = String.format("%.1f", totalBytesRead.toFloat() / (1024 * 1024))
                 val totalMb = String.format("%.1f", fileLength.toFloat() / (1024 * 1024))
-                
+
                 withContext(Dispatchers.Main) {
                     onStatusChanged("已下载 $readMb MB / $totalMb MB")
                     onProgress(progress)
+                }
+            } else {
+                // 处理一些镜像站采用 Chunked 分块传输编码导致 contentLength 无效的情况
+                val readMb = String.format("%.1f", totalBytesRead.toFloat() / (1024 * 1024))
+                withContext(Dispatchers.Main) {
+                    onStatusChanged("已下载 $readMb MB (流式无界传输中…)")
+                    onProgress(0f)
                 }
             }
         }
         outputStream.flush()
         return@withContext true
+    } catch (e: SecurityException) {
+        e.printStackTrace()
+        withContext(Dispatchers.Main) {
+            onStatusChanged("❌ 安全限制: 请检查 AndroidManifest.xml 是否遗漏了 INTERNET 权限配置")
+        }
+        return@withContext false
     } catch (e: Exception) {
         e.printStackTrace()
+        withContext(Dispatchers.Main) {
+            onStatusChanged("❌ 网络异常: ${e.localizedMessage ?: "建立数据握手失败"}")
+        }
         return@withContext false
     } finally {
         outputStream?.close()
@@ -381,7 +460,7 @@ private suspend fun performDownloadRootfs(
 }
 
 // ─────────────────────────────────────────────
-// 核心后台业务层：.tar.xz 强力流解压部署引擎
+// 核心后台解压部署引擎
 // ─────────────────────────────────────────────
 private suspend fun performExtractTarXz(
     archiveFile: File,
@@ -390,25 +469,23 @@ private suspend fun performExtractTarXz(
 ): Boolean = withContext(Dispatchers.IO) {
     try {
         if (destinationDir.exists()) {
-            destinationDir.deleteRecursively() // 重新干净地进行根文件目录生成
+            destinationDir.deleteRecursively()
         }
         destinationDir.mkdirs()
 
         onStatusChanged("正在解密 XZ 压缩矩阵…")
-        // 使用引入的 XZInputStream 解码外层的 .xz 数据
         val fileIn = archiveFile.inputStream()
         val bufferedIn = BufferedInputStream(fileIn, 16384)
         val xzIn = XZInputStream(bufferedIn)
-
-        // 串联 TarArchiveInputStream 拆解内层的 .tar 归档结构
         val tarIn = TarArchiveInputStream(xzIn)
+        
         var entry = tarIn.nextEntry
         var fileCount = 0
 
         while (entry != null) {
             val targetFile = File(destinationDir, entry.name)
             
-            // 安全防御防护：防止 Zip Slip 漏洞（恶意路径穿越攻击）
+            // 安全机制：防止恶意路径穿越攻击
             if (!targetFile.canonicalPath.startsWith(destinationDir.canonicalPath)) {
                 entry = tarIn.nextEntry
                 continue
@@ -417,10 +494,7 @@ private suspend fun performExtractTarXz(
             if (entry.isDirectory) {
                 targetFile.mkdirs()
             } else {
-                // 确保父目录一定存在
                 targetFile.parentFile?.mkdirs()
-                
-                // 输出文件数据
                 FileOutputStream(targetFile).use { fos ->
                     val buffer = ByteArray(16384)
                     var len: Int
@@ -430,7 +504,7 @@ private suspend fun performExtractTarXz(
                     fos.flush()
                 }
                 
-                // 恢复 Linux 二进制基础的可执行权限属性（极其重要！）
+                // 恢复 Linux 系统可执行节点属性
                 if (entry.mode and 0x40 != 0 || entry.name.contains("bin/")) {
                     targetFile.setExecutable(true, false)
                 }
@@ -447,13 +521,15 @@ private suspend fun performExtractTarXz(
         }
 
         tarIn.close()
-        // 系统部署成功后，彻底销毁高占用的本地临时 tar.xz 压缩包，释放宝贵的手机存储空间
         if (archiveFile.exists()) {
             archiveFile.delete()
         }
         return@withContext true
     } catch (e: Exception) {
         e.printStackTrace()
+        withContext(Dispatchers.Main) {
+            onStatusChanged("❌ 部署异常: 系统解压中断，可能是手机存储空间不足")
+        }
         return@withContext false
     }
 }
