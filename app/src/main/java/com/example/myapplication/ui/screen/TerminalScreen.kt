@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.screen
 
+import androidx.compose.ui.graphics.StrokeCap
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -80,7 +81,7 @@ fun TerminalScreen(
             val shExec = File(rootfsDir, "bin/sh")
             if (shExec.exists() && rootfsDir.isDirectory) {
                 envState = EnvironmentState.Ready
-                terminalLines.add("Welcome to Debian GNU/Linux 12 (bookworm) via PRoot!")
+                terminalLines.add("Welcome to Debian GNU/Linux 13 (trixie) via PRoot!")
                 terminalLines.add("System architecture: aarch64 (Android sandboxed)")
                 terminalLines.add("Debian rootfs detected successfully.")
                 terminalLines.add("")
@@ -274,7 +275,7 @@ fun TerminalScreen(
                             LinearProgressIndicator(
                                 progress = { downloadProgress },
                                 modifier = Modifier.fillMaxWidth(),
-                                strokeCap = ProgressIndicatorDefaults.StrokeCap
+                                strokeCap = StrokeCap.Round
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
