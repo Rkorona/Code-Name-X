@@ -158,6 +158,7 @@ class WebAppInterface(
 fun EditorScreen(
     filePath: String, // 需要打开和编辑的文件绝对路径
     onNavigateBack: () -> Unit,
+    onFileSaved: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -300,12 +301,13 @@ fun EditorScreen(
     val saveFile: () -> Unit = {
         webViewRef?.let { wv ->
             wv.evaluateJavascript("window.editorAPI.getContentBase64()") { base64WithQuotes ->
-                val cleanBase64 = base64WithQuotes?.trim('"') ?: ""
-                if (cleanBase64.isNotEmpty() && cleanBase64 != "null") {
+                // 只排除真正的 null / JS undefined，允许空字符串（空文件）正常保存
+                val rawValue = base64WithQuotes?.trim('"') ?: ""
+                if (rawValue != "null") {
                     coroutineScope.launch(Dispatchers.IO) {
                         try {
-                            val content = cleanBase64.fromBase64()
-                            
+                            val content = if (rawValue.isEmpty()) "" else rawValue.fromBase64()
+
                             // 还原为读取时的编码格式进行二进制物理写入，保护编码属性不被强制破坏为默认的 UTF-8
                             val charset = java.nio.charset.Charset.forName(fileEncoding)
                             val encodedBytes = content.toByteArray(charset)
@@ -321,6 +323,7 @@ fun EditorScreen(
                             fileContent = content
                             launch(Dispatchers.Main) {
                                 Toast.makeText(context, "文件已保存", Toast.LENGTH_SHORT).show()
+                                onFileSaved?.invoke()
                             }
                         } catch (e: Exception) {
                             launch(Dispatchers.Main) {

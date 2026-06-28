@@ -23,7 +23,7 @@ import java.io.File
 // ─────────────────────────────────────────────
 sealed class Screen {
     object Home : Screen()
-    data class Editor(val filePath: String) : Screen()
+    data class Editor(val filePath: String, val projectId: String) : Screen()
 }
 
 
@@ -124,8 +124,9 @@ fun AppNavigation() {
                     selectedProject = null
                 },
                 onOpenFile = { filePath ->
+                    val pid = selectedProject?.id ?: ""
                     selectedProject = null
-                    currentScreen = Screen.Editor(filePath = filePath)
+                    currentScreen = Screen.Editor(filePath = filePath, projectId = pid)
                 },
                 onNewLocalProject = {
                     showNewLocalDialog = true
@@ -150,6 +151,11 @@ fun AppNavigation() {
                 filePath = screen.filePath,
                 onNavigateBack = {
                     currentScreen = Screen.Home
+                },
+                onFileSaved = {
+                    if (screen.projectId.isNotEmpty()) {
+                        scope.launch { repository.updateLastModified(screen.projectId) }
+                    }
                 }
             )
         }

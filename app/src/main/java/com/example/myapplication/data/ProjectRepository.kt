@@ -27,6 +27,10 @@ class ProjectRepository(context: Context) {
         dao.updateProjectLanguage(id, language.ordinal.toLong())
     }
 
+    suspend fun updateLastModified(id: String) {
+        dao.updateLastModified(id, System.currentTimeMillis().toString())
+    }
+
     private fun ProjectEntity.toProject(): Project = Project(
         id = id,
         name = name,

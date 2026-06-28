@@ -19,4 +19,7 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET iconColorLong = :languageOrdinal WHERE id = :id")
     suspend fun updateProjectLanguage(id: String, languageOrdinal: Long)
+
+    @Query("UPDATE projects SET lastModified = :lastModified WHERE id = :id")
+    suspend fun updateLastModified(id: String, lastModified: String)
 }
