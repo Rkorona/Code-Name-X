@@ -29,7 +29,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -115,7 +114,7 @@ private fun filterAndSortProjects(
     return when (order) {
         ProjectSortOrder.DEFAULT -> filtered
         ProjectSortOrder.NAME_ASC ->
-            filtered.sortedWith { a, b -> String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name) }
+            filtered.sortedWith { a, b -> String.CASE_INSENSITIVE_ORDER.compare(a.name, a.name) }
         ProjectSortOrder.NAME_DESC ->
             filtered.sortedWith { a, b -> String.CASE_INSENSITIVE_ORDER.compare(b.name, a.name) }
         ProjectSortOrder.TYPE_LOCAL_FIRST ->
@@ -138,7 +137,7 @@ private fun filterAndSortProjects(
 // ─────────────────────────────────────────────
 // HomeScreen (主骨架重构)
 // ─────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     projects: List<Project>,
@@ -347,7 +346,7 @@ fun HomeScreen(
             }
         },
         floatingActionButton = {
-            // 只在项目列表页 (Tab 0) 显示创建项目的悬浮按钮
+            // 只在项目列表页 (Tab 0) 且键盘未弹起时显示创建项目的悬浮按钮
             if (selectedTab == 0) {
                 FloatingActionButton(
                     onClick = { showAddSheet = true },
@@ -365,10 +364,13 @@ fun HomeScreen(
             }
         },
         bottomBar = {
-            AppBottomNavBar(
-                selectedTab = selectedTab,
-                onTabSelected = onTabSelected
-            )
+            // 关键优化：当处于终端页面 (Tab 2) 且输入法软件盘弹起时，动态隐藏底部导航栏，让终端获得最大纵向空间并防止遮挡。
+            if (selectedTab != 2 || !WindowInsets.isImeVisible) {
+                AppBottomNavBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = onTabSelected
+                )
+            }
         }
     ) { innerPadding ->
         // 根据选中的 Tab 决定页面主体的渲染内容
@@ -438,7 +440,7 @@ fun HomeScreen(
 }
 
 // ─────────────────────────────────────────────
-// 项目列表（支持搜索结果提示 + 空态）
+// 项目列表
 // ─────────────────────────────────────────────
 @Composable
 fun ProjectList(
@@ -551,7 +553,7 @@ fun ProjectList(
 }
 
 // ─────────────────────────────────────────────
-// 项目卡片及语言图标组件（保持不变）
+// 项目卡片及语言图标组件
 // ─────────────────────────────────────────────
 @Composable
 fun ProjectCard(

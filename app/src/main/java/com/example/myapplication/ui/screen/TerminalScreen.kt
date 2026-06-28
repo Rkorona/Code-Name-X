@@ -99,7 +99,11 @@ fun TerminalScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding() // 核心改动：使终端内容高度自适应键盘高度，防止输入法遮挡
+    ) {
         // ─────────────────────────────────────────────
         // 1. 标准控制台内核层 UI
         // ─────────────────────────────────────────────
@@ -190,7 +194,7 @@ fun TerminalScreen(
         }
 
         // ─────────────────────────────────────────────
-        // 2. 改造后的安装提示弹窗（支持渲染实时错误日志）
+        // 2. 改造后的安装提示弹窗
         // ─────────────────────────────────────────────
         if (envState == EnvironmentState.NotInstalled) {
             AlertDialog(
@@ -221,11 +225,9 @@ fun TerminalScreen(
                                         terminalLines.add("System environment ready. Enjoy full Linux terminal ecosystem.")
                                     } else {
                                         envState = EnvironmentState.NotInstalled
-                                        // 保持 currentStatusMessage 里的解压错误字样
                                     }
                                 } else {
                                     envState = EnvironmentState.NotInstalled
-                                    // 保持 currentStatusMessage 里的下载错误字样
                                 }
                             }
                         }
@@ -250,7 +252,6 @@ fun TerminalScreen(
                             lineHeight = 20.sp
                         )
                         
-                        // 如果失败了，直接在这里把报错信息显示出来
                         if (currentStatusMessage.startsWith("❌")) {
                             Surface(
                                 color = MaterialTheme.colorScheme.errorContainer,
@@ -349,14 +350,12 @@ fun TerminalScreen(
 private fun isDebianInstalled(rootfsDir: File): Boolean {
     if (!rootfsDir.exists() || !rootfsDir.isDirectory) return false
 
-    // 检测不含软链接干扰的 Linux 关键结构
     val etcDir = File(rootfsDir, "etc")
     val usrDir = File(rootfsDir, "usr")
 
     val hasEtcPasswd = File(etcDir, "passwd").exists()
     val hasUsrBin = File(usrDir, "bin").exists() && File(usrDir, "bin").isDirectory
 
-    // 检测 bin/sh，不跟随（NOFOLLOW_LINKS）软链接解析，仅检查该链接节点本身是否存在
     val shFile = File(rootfsDir, "bin/sh")
     val hasShSymlink = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -368,7 +367,6 @@ private fun isDebianInstalled(rootfsDir: File): Boolean {
         false
     }
 
-    // 只要核心目录和核心可执行文件存在其一，即判定环境已就绪，避免因宿主无法解析 Linux 绝对路径软链接而误判
     return (hasUsrBin && hasEtcPasswd) || (hasShSymlink && hasUsrBin)
 }
 
@@ -379,11 +377,10 @@ private fun safeCreateParentDirs(file: File, rootfsDir: File) {
     val parent = file.parentFile ?: return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         try {
-            // NIO 的 createDirectories 能够正确追踪并穿透软链接，在目的位置创建目录而不会破坏软链接本身
             Files.createDirectories(parent.toPath())
             return
         } catch (e: Exception) {
-            // 降级使用普通 mkdirs
+            // fallback
         }
     }
     parent.mkdirs()
@@ -418,7 +415,7 @@ private suspend fun performDownloadRootfs(
             connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 15000
             connection.readTimeout = 30000
-            connection.instanceFollowRedirects = false // 自控重定向
+            connection.instanceFollowRedirects = false
             
             connection.setRequestProperty(
                 "User-Agent", 
@@ -532,7 +529,6 @@ private suspend fun performExtractTarXz(
         while (entry != null) {
             val targetFile = File(destinationDir, entry.name)
             
-            // 安全机制：防止恶意路径穿越
             if (!targetFile.canonicalPath.startsWith(destinationDir.canonicalPath)) {
                 entry = tarIn.nextEntry
                 continue
@@ -541,21 +537,15 @@ private suspend fun performExtractTarXz(
             if (entry.isDirectory) {
                 targetFile.mkdirs()
             } else if (entry.isSymbolicLink) {
-                // ─────────────────────────────────────────────
-                // 1. 还原 Linux 软链接 (Symlink)
-                // ─────────────────────────────────────────────
                 val target = entry.linkName
                 safeCreateParentDirs(targetFile, destinationDir)
-                targetFile.delete() // 必须先删除旧节点才能建立新链接
+                targetFile.delete()
                 try {
                     Os.symlink(target, targetFile.absolutePath)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             } else if (entry.isLink) {
-                // ─────────────────────────────────────────────
-                // 2. 还原 Linux 硬链接 (Hard Link)
-                // ─────────────────────────────────────────────
                 val target = entry.linkName
                 safeCreateParentDirs(targetFile, destinationDir)
                 targetFile.delete()
@@ -564,16 +554,12 @@ private suspend fun performExtractTarXz(
                     if (existingFile.exists()) {
                         Os.link(existingFile.absolutePath, targetFile.absolutePath)
                     } else {
-                        // 降级：如果指向的原文件还没解压出来，创建软链接代之
                         Os.symlink(target, targetFile.absolutePath)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             } else {
-                // ─────────────────────────────────────────────
-                // 3. 部署普通文件 (Regular File)
-                // ─────────────────────────────────────────────
                 safeCreateParentDirs(targetFile, destinationDir)
                 targetFile.delete()
                 FileOutputStream(targetFile).use { fos ->
@@ -585,7 +571,6 @@ private suspend fun performExtractTarXz(
                     fos.flush()
                 }
                 
-                // 恢复 Linux 系统可执行节点属性
                 if (entry.mode and 0x40 != 0 || entry.name.contains("bin/")) {
                     targetFile.setExecutable(true, false)
                 }
