@@ -169,6 +169,8 @@ fun TerminalScreen(
                                 setSupportZoom(false)
                                 builtInZoomControls = false
                                 displayZoomControls = false
+                                useWideViewPort = true
+                                loadWithOverviewMode = false
                             }
                             settings.allowFileAccess = true
                             settings.allowFileAccessFromFileURLs = true

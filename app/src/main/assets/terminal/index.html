@@ -29,7 +29,11 @@
   <script src="xterm.js"></script>
   <script src="xterm-addon-fit.js"></script>
   <script>
-    console.log('terminal init: innerW=' + window.innerWidth + ' innerH=' + window.innerHeight);
+    // Prefer clientWidth/clientHeight (layout viewport, always correct in WebView)
+    // window.innerWidth may return 980 (desktop default) if viewport meta not applied yet
+    console.log('terminal init: innerW=' + window.innerWidth + ' innerH=' + window.innerHeight
+      + ' clientW=' + document.documentElement.clientWidth
+      + ' clientH=' + document.documentElement.clientHeight);
 
     window.onerror = function(msg, src, line) {
       var el = document.createElement('pre');
@@ -70,8 +74,9 @@
     var cellW = (cell.w > 0) ? cell.w : 7.8;
     var cellH = (cell.h > 0) ? cell.h : 16.25;
 
-    var iw = window.innerWidth  || 360;
-    var ih = window.innerHeight || 640;
+    // clientWidth/clientHeight = layout viewport in CSS px, always correct with useWideViewPort=true
+    var iw = document.documentElement.clientWidth  || window.innerWidth  || 360;
+    var ih = document.documentElement.clientHeight || window.innerHeight || 640;
 
     var initCols = Math.max(2,  Math.floor(iw / cellW));
     var initRows = Math.max(1,  Math.floor(ih / cellH));
@@ -114,8 +119,8 @@
 
     // ── Resize helper (for window resize / keyboard in-out) ───────
     function doFit() {
-      var iw2 = window.innerWidth  || 360;
-      var ih2 = window.innerHeight || 640;
+      var iw2 = document.documentElement.clientWidth  || window.innerWidth  || 360;
+      var ih2 = document.documentElement.clientHeight || window.innerHeight || 640;
       var c   = measureCell(term.options.fontSize, term.options.fontFamily, term.options.lineHeight);
       var cw  = (c.w > 0) ? c.w : cellW;
       var ch  = (c.h > 0) ? c.h : cellH;
