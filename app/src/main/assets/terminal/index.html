@@ -7,30 +7,20 @@
   <link rel="stylesheet" href="xterm.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html {
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
+    html, body {
+      width: 100%;
+      height: 100%;
       background: #111625;
-    }
-    body {
-      width: 100vw;
-      height: 100vh;
       overflow: hidden;
-      background: #111625;
-      display: flex;
-      flex-direction: column;
     }
     #terminal {
-      flex: 1 1 auto;
-      width: 100vw;
-      min-height: 0;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #111625;
       overflow: hidden;
     }
-    /* xterm internal sizing */
     .xterm { height: 100%; }
     .xterm-viewport { overflow-y: auto !important; }
-    .xterm-screen { height: 100% !important; }
   </style>
 </head>
 <body>
@@ -39,14 +29,15 @@
   <script src="xterm.js"></script>
   <script src="xterm-addon-fit.js"></script>
   <script>
-    console.log('terminal index loaded');
-    window.onerror = function(message, source, lineno, colno, error) {
-      console.error('Terminal error:', message, 'at', source + ':' + lineno + ':' + colno, error);
-      var err = document.createElement('pre');
-      err.style.cssText = 'color:#f87171;padding:16px;white-space:pre-wrap;font-family:monospace;font-size:13px;';
-      err.textContent = 'Terminal JS error:\n' + message + '\n' + source + ':' + lineno + ':' + colno;
+    console.log('terminal index loaded, innerW=' + window.innerWidth + ' innerH=' + window.innerHeight);
+
+    window.onerror = function(msg, src, line, col, err) {
+      console.error('JS error:', msg, src + ':' + line);
+      var el = document.createElement('pre');
+      el.style.cssText = 'color:#f87171;padding:16px;white-space:pre-wrap;font-size:13px;';
+      el.textContent = 'Error: ' + msg + '\n' + src + ':' + line;
       document.body.innerHTML = '';
-      document.body.appendChild(err);
+      document.body.appendChild(el);
       return false;
     };
 
@@ -59,22 +50,13 @@
         cursor:        '#ffffff',
         cursorAccent:  '#111625',
         selectionBackground: 'rgba(56,189,248,0.3)',
-        black:         '#1e2130',
-        red:           '#ef4444',
-        green:         '#22c55e',
-        yellow:        '#fbbf24',
-        blue:          '#38bdf8',
-        magenta:       '#bb86fc',
-        cyan:          '#06b6d4',
-        white:         '#e2e8f0',
-        brightBlack:   '#555a70',
-        brightRed:     '#f87171',
-        brightGreen:   '#4ade80',
-        brightYellow:  '#fcd34d',
-        brightBlue:    '#60a5fa',
-        brightMagenta: '#d8b4fe',
-        brightCyan:    '#22d3ee',
-        brightWhite:   '#ffffff',
+        black:   '#1e2130', red:    '#ef4444', green:  '#22c55e',
+        yellow:  '#fbbf24', blue:   '#38bdf8', magenta:'#bb86fc',
+        cyan:    '#06b6d4', white:  '#e2e8f0',
+        brightBlack:   '#555a70', brightRed:    '#f87171',
+        brightGreen:   '#4ade80', brightYellow: '#fcd34d',
+        brightBlue:    '#60a5fa', brightMagenta:'#d8b4fe',
+        brightCyan:    '#22d3ee', brightWhite:  '#ffffff',
       },
       fontFamily: "'Courier New', Courier, monospace",
       fontSize: 13,
@@ -88,45 +70,77 @@
 
     term.loadAddon(fitAddon);
     term.open(document.getElementById('terminal'));
-    console.log('xterm open called');
+    console.log('xterm open done');
 
-    // Force #terminal to fill the actual viewport height
-    function applyExplicitHeight() {
-      var h = window.innerHeight;
-      var el = document.getElementById('terminal');
-      if (el && h > 0) {
-        el.style.height = h + 'px';
-      }
-    }
+    // ── Sizing ─────────────────────────────────────────────────────
+    // Primary: use xterm internal cell metrics + window dimensions
+    // Fallback: FitAddon (works once #terminal is position:fixed)
+    var _fitScheduled = false;
 
     function doFit() {
-      applyExplicitHeight();
+      _fitScheduled = false;
       try {
-        fitAddon.fit();
-        var r = term.rows, c = term.cols;
-        console.log('doFit: rows=' + r + ' cols=' + c + ' innerH=' + window.innerHeight);
-        if (r <= 1 && window.innerHeight > 50) {
-          // rows=1 means height not ready yet, retry
-          console.log('doFit: rows still 1, scheduling retry');
-          setTimeout(doFit, 200);
+        // Try direct cell-metric approach first
+        var core = term._core;
+        var cellH = 0, cellW = 0;
+        try {
+          var dims = core._renderService.dimensions;
+          // css property available since xterm 5; pixel fallback for xterm 4
+          if (dims.css && dims.css.cell) {
+            cellH = dims.css.cell.height;
+            cellW = dims.css.cell.width;
+          } else if (dims.actualCellHeight) {
+            cellH = dims.actualCellHeight;
+            cellW = dims.actualCellWidth;
+          }
+        } catch(e) {}
+
+        var iw = window.innerWidth;
+        var ih = window.innerHeight;
+
+        if (cellH > 0 && cellW > 0 && ih > 0 && iw > 0) {
+          var rows = Math.max(1, Math.floor(ih / cellH));
+          var cols = Math.max(2, Math.floor(iw / cellW));
+          console.log('manualFit: cellH=' + cellH.toFixed(2) + ' cellW=' + cellW.toFixed(2)
+            + ' ih=' + ih + ' iw=' + iw + ' rows=' + rows + ' cols=' + cols);
+          if (term.rows !== rows || term.cols !== cols) {
+            term.resize(cols, rows);
+          }
+          try { Android.onResize(term.rows, term.cols); } catch(e) {}
           return;
         }
-        try { Android.onResize(r, c); } catch(e) {}
+
+        // Fallback: FitAddon (relies on #terminal being position:fixed)
+        fitAddon.fit();
+        console.log('fitAddon fallback: rows=' + term.rows + ' cols=' + term.cols);
+        if (term.rows <= 2 && ih > 100) {
+          scheduleFit(300);
+        } else {
+          try { Android.onResize(term.rows, term.cols); } catch(e) {}
+        }
       } catch(e) {
         console.error('doFit error', e);
       }
     }
 
-    // Staggered fits to catch layout settling at different times
-    setTimeout(doFit, 50);
-    setTimeout(doFit, 200);
-    setTimeout(doFit, 600);
-    setTimeout(doFit, 1200);
+    function scheduleFit(delay) {
+      if (_fitScheduled) return;
+      _fitScheduled = true;
+      setTimeout(function() { doFit(); }, delay || 0);
+    }
 
-    window.addEventListener('resize', doFit);
+    // Wait for xterm to paint before first fit (cell metrics need 1 rAF)
+    requestAnimationFrame(function() {
+      doFit();
+      // Extra passes to catch late layout changes
+      setTimeout(doFit, 300);
+      setTimeout(doFit, 800);
+    });
+
+    window.addEventListener('resize', function() { scheduleFit(50); });
 
     if (window.ResizeObserver) {
-      var ro = new ResizeObserver(function() { doFit(); });
+      var ro = new ResizeObserver(function() { scheduleFit(50); });
       ro.observe(document.getElementById('terminal'));
     }
 
@@ -145,57 +159,39 @@
       try { Android.onResize(size.rows, size.cols); } catch(e) {}
     });
 
-    // ── Kotlin → terminal (PTY output) ──────────────────────────
-    var __utf8decoder = new TextDecoder();
+    // ── PTY output → terminal ────────────────────────────────────
+    var __utf8dec = new TextDecoder();
 
     window.writeOutput = function(base64) {
       try {
         var binary = atob(base64);
         var bytes = new Uint8Array(binary.length);
-        for (var i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        try {
-          term.write(__utf8decoder.decode(bytes));
-        } catch (e) {
+        for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        try { term.write(__utf8dec.decode(bytes)); }
+        catch(e) {
           var s = '';
           for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
           term.write(s);
         }
-      } catch(e) {
-        console.error('writeOutput error', e);
-      }
+      } catch(e) { console.error('writeOutput error', e); }
     };
 
-    // ── Inject raw bytes (toolbar special keys) ──────────────────
+    // ── Toolbar special keys ────────────────────────────────────
     window.injectInput = function(base64) {
       try {
         var binary = atob(base64);
-        try {
-          var bytes = new Uint8Array(binary.length);
-          for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          term.write(__utf8decoder.decode(bytes));
-        } catch (e) {
-          term.write(binary);
-        }
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        try { term.write(__utf8dec.decode(bytes)); } catch(e) { term.write(binary); }
         Android.sendInput(base64);
-      } catch(e) {
-        console.error('injectInput error', e);
-      }
+      } catch(e) { console.error('injectInput error', e); }
     };
 
-    // ── Apply settings ───────────────────────────────────────────
-    window.setFontSize = function(size) {
-      term.options.fontSize = size;
-      doFit();
-    };
-
+    // ── Settings ────────────────────────────────────────────────
+    window.setFontSize = function(size) { term.options.fontSize = size; doFit(); };
     window.setTheme = function(bg, fg) {
-      term.options.theme = Object.assign({}, term.options.theme, {
-        background: bg, foreground: fg
-      });
+      term.options.theme = Object.assign({}, term.options.theme, { background: bg, foreground: fg });
     };
-
     window.clearTerminal = function() { term.clear(); };
 
     term.focus();
