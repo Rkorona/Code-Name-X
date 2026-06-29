@@ -187,11 +187,20 @@ fun HomeScreen(
     // ── 编辑对话框状态 ──
     var editingProject by remember { mutableStateOf<Project?>(null) }
 
-    // ── 滚动状态（用于顶栏背景变化）──
+    // ── 滚动状态（各 Tab 独立追踪，用于顶栏背景变化）──
     val listState = rememberLazyListState()
-    val isScrolled by remember {
+    val settingsListState = rememberLazyListState()
+
+    fun LazyListState.isScrolled() =
+        firstVisibleItemIndex > 0 || firstVisibleItemScrollOffset > 0
+
+    val isScrolled by remember(selectedTab) {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+            when (selectedTab) {
+                0    -> listState.isScrolled()
+                3    -> settingsListState.isScrolled()
+                else -> false
+            }
         }
     }
 
@@ -288,7 +297,8 @@ fun HomeScreen(
                 if (settingsViewModel != null) {
                     SettingsScreen(
                         viewModel = settingsViewModel,
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        listState = settingsListState
                     )
                 }
             }

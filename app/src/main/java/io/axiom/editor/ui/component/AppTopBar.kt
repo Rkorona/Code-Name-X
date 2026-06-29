@@ -54,13 +54,12 @@ fun AppTopBar(
     val keyboardController = LocalSoftwareKeyboardController.current
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
-    // 各 Tab 的基础背景色（未滚动时与页面背景一致）
-    val baseSurface = MaterialTheme.colorScheme.surface
-    val scrolledSurface = MaterialTheme.colorScheme.surfaceContainerHigh
-
-    // 滚动时背景加深，动画过渡
+    // 未滚动时与页面背景（Scaffold background）保持一致，滚动后加深
     val barBgColor by animateColorAsState(
-        targetValue = if (isScrolled) scrolledSurface else baseSurface,
+        targetValue = if (isScrolled)
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        else
+            MaterialTheme.colorScheme.background,
         animationSpec = tween(durationMillis = 250),
         label = "topBarBg"
     )
