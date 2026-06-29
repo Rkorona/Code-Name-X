@@ -120,6 +120,18 @@
     term.open(document.getElementById('terminal'));
     console.log('xterm opened: rows=' + term.rows + ' cols=' + term.cols);
 
+    // ── Reliable scroll-to-bottom: fires now + after xterm async render ──
+    function scheduleScrollToBottom() {
+      term.scrollToBottom();
+      clearTimeout(window._scrollTimer1);
+      clearTimeout(window._scrollTimer2);
+      window._scrollTimer1 = setTimeout(function() { term.scrollToBottom(); }, 80);
+      window._scrollTimer2 = setTimeout(function() { term.scrollToBottom(); }, 200);
+    }
+
+    // Exposed for Kotlin to call after setViewportSize
+    window.scrollTerm = function() { scheduleScrollToBottom(); };
+
     // ── setViewportSize: called by Kotlin with exact WebView CSS px ──
     // This is the authoritative source for dimensions — bypasses all
     // unreliable JS viewport APIs (window.innerWidth, clientWidth, etc.)
@@ -140,7 +152,7 @@
         term.resize(cols2, rows2);
       }
       try { Android.onResize(term.rows, term.cols); } catch(e) {}
-      term.scrollToBottom();
+      scheduleScrollToBottom();
     };
 
     // ── Resize helper (for window resize / keyboard in-out) ───────
@@ -158,7 +170,7 @@
         term.resize(cols2, rows2);
       }
       try { Android.onResize(term.rows, term.cols); } catch(e) {}
-      term.scrollToBottom();
+      scheduleScrollToBottom();
     }
 
     // One deferred fit after layout settles, to catch any diff from initial measure

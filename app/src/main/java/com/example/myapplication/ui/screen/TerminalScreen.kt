@@ -235,6 +235,13 @@ fun TerminalScreen(
                                     evaluateJavascript(
                                         "if(window.setViewportSize) window.setViewportSize($cssW,$cssH)", null
                                     )
+                                    // Schedule an extra scroll after xterm.js finishes
+                                    // its async resize rendering (250 ms safety margin)
+                                    postDelayed({
+                                        evaluateJavascript(
+                                            "if(window.scrollTerm) window.scrollTerm()", null
+                                        )
+                                    }, 250)
                                 }
                             }
 
