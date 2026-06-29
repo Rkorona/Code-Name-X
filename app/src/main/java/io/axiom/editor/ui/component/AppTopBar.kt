@@ -48,6 +48,7 @@ fun AppTopBar(
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
     isScrolled: Boolean = false,
+    githubTrailingAction: (@Composable RowScope.() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val searchFocusRequester = remember { FocusRequester() }
@@ -242,6 +243,16 @@ fun AppTopBar(
                     modifier = modifier
                 )
             }
+        }
+        1 -> {
+            TopAppBar(
+                title = { Text("GitHub Repositories", fontWeight = FontWeight.Bold) },
+                actions = { githubTrailingAction?.invoke(this) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = barBgColor
+                ),
+                modifier = modifier
+            )
         }
         3 -> {
             TopAppBar(

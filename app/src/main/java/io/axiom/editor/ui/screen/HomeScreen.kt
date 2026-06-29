@@ -5,6 +5,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,6 +50,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 import io.axiom.editor.ui.component.AddProjectAction
 import io.axiom.editor.ui.component.AddProjectSheet
 import io.axiom.editor.ui.component.AppBottomNavBar
@@ -56,6 +59,7 @@ import io.axiom.editor.ui.component.AppTopBar
 import io.axiom.editor.ui.model.Project
 import io.axiom.editor.ui.model.ProjectLanguage
 import io.axiom.editor.ui.model.ProjectType
+import io.axiom.editor.ui.theme.AxiomColors
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -201,6 +205,7 @@ fun HomeScreen(
     // ── 滚动状态（各 Tab 独立追踪，用于顶栏背景变化）──
     val listState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
+    val gitHubListState = rememberLazyListState()
 
     fun LazyListState.isScrolled() =
         firstVisibleItemIndex > 0 || firstVisibleItemScrollOffset > 0
@@ -209,11 +214,16 @@ fun HomeScreen(
         derivedStateOf {
             when (selectedTab) {
                 0    -> listState.isScrolled()
+                1    -> gitHubListState.isScrolled()
                 3    -> settingsListState.isScrolled()
                 else -> false
             }
         }
     }
+
+    // ── GitHub ──
+    val gitHubViewModel: GitHubViewModel = viewModel()
+    var showGitHubLoginSheet by remember { mutableStateOf(false) }
 
     // ── 派生显示列表：过滤 + 排序 ──
     val displayedProjects = remember(projects, searchQuery, sortOrder) {
@@ -267,7 +277,27 @@ fun HomeScreen(
                         onSearchActiveChange = { isSearchActive = it },
                         searchQuery = searchQuery,
                         onSearchQueryChange = { searchQuery = it },
-                        isScrolled = isScrolled
+                        isScrolled = isScrolled,
+                        githubTrailingAction = {
+                            if (gitHubViewModel.isLoggedIn) {
+                                AsyncImage(
+                                    model = gitHubViewModel.userAvatarUrl,
+                                    contentDescription = "用户头像",
+                                    modifier = androidx.compose.ui.Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .border(1.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                                )
+                            } else {
+                                IconButton(onClick = { showGitHubLoginSheet = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "添加账号",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -320,7 +350,11 @@ fun HomeScreen(
             }
             1 -> {
                 GitHubScreen(
-                    modifier = Modifier.padding(innerPadding)
+                    modifier = Modifier.padding(innerPadding),
+                    viewModel = gitHubViewModel,
+                    listState = gitHubListState,
+                    showLoginSheet = showGitHubLoginSheet,
+                    onLoginSheetDismiss = { showGitHubLoginSheet = false }
                 )
             }
             3 -> {

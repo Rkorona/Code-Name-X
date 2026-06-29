@@ -3,11 +3,9 @@
 package io.axiom.editor.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,21 +24,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.Downloading
-import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,18 +50,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -75,7 +67,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil3.compose.AsyncImage
 import io.axiom.editor.ui.model.LocalRepo
 import io.axiom.editor.ui.model.RemoteRepo
 import io.axiom.editor.ui.theme.AxiomColors
@@ -88,23 +79,17 @@ import io.axiom.editor.ui.theme.AxiomColors
 @Composable
 fun GitHubScreen(
     modifier: Modifier = Modifier,
-    viewModel: GitHubViewModel = viewModel()
+    viewModel: GitHubViewModel = viewModel(),
+    listState: LazyListState = rememberLazyListState(),
+    showLoginSheet: Boolean = false,
+    onLoginSheetDismiss: () -> Unit = {}
 ) {
-    val isLoggedIn = viewModel.isLoggedIn
-    val userAvatarUrl = viewModel.userAvatarUrl
     val expandedRepoName = viewModel.expandedRepoName
     val localRepos = viewModel.localRepos
     val remoteRepos = viewModel.remoteRepos
     val searchQuery = viewModel.searchQuery
 
-    var showLoginSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
-    val listState = rememberLazyListState()
-    val isScrolled by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-        }
-    }
 
     Box(
         modifier = modifier
@@ -112,13 +97,6 @@ fun GitHubScreen(
             .background(AxiomColors.Background)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-
-            GitHubTopBar(
-                isLoggedIn = isLoggedIn,
-                avatarUrl = userAvatarUrl,
-                onAddClick = { showLoginSheet = true },
-                isScrolled = isScrolled
-            )
 
             val filteredRepos = if (searchQuery.isBlank()) {
                 remoteRepos
@@ -169,74 +147,12 @@ fun GitHubScreen(
         if (showLoginSheet) {
             LoginBottomSheet(
                 sheetState = sheetState,
-                onDismiss = { showLoginSheet = false },
+                onDismiss = onLoginSheetDismiss,
                 onLogin = { username, token ->
                     viewModel.login(username, token)
-                    showLoginSheet = false
+                    onLoginSheetDismiss()
                 }
             )
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// 顶部导航栏
-// ═══════════════════════════════════════════════════════════════════
-
-@Composable
-private fun GitHubTopBar(
-    isLoggedIn: Boolean,
-    avatarUrl: String?,
-    onAddClick: () -> Unit,
-    isScrolled: Boolean = false
-) {
-    val barBgColor by animateColorAsState(
-        targetValue = if (isScrolled) AxiomColors.CardBackground else AxiomColors.Background,
-        animationSpec = tween(durationMillis = 250),
-        label = "githubTopBarBg"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(barBgColor)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "GitHub Repositories",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = AxiomColors.TextPrimary
-        )
-
-        if (isLoggedIn) {
-            AsyncImage(
-                model = avatarUrl,
-                contentDescription = "用户头像",
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.1f), CircleShape),
-                contentScale = ContentScale.Crop
-            )
-        } else {
-            IconButton(
-                onClick = onAddClick,
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(AxiomColors.CardBackground)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "添加账号",
-                    tint = AxiomColors.TextSecondary,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
         }
     }
 }
