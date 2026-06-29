@@ -29,10 +29,9 @@
   <script src="xterm.js"></script>
   <script src="xterm-addon-fit.js"></script>
   <script>
-    console.log('terminal index loaded, innerW=' + window.innerWidth + ' innerH=' + window.innerHeight);
+    console.log('terminal init: innerW=' + window.innerWidth + ' innerH=' + window.innerHeight);
 
-    window.onerror = function(msg, src, line, col, err) {
-      console.error('JS error:', msg, src + ':' + line);
+    window.onerror = function(msg, src, line) {
       var el = document.createElement('pre');
       el.style.cssText = 'color:#f87171;padding:16px;white-space:pre-wrap;font-size:13px;';
       el.textContent = 'Error: ' + msg + '\n' + src + ':' + line;
@@ -41,9 +40,49 @@
       return false;
     };
 
-    var fitAddon = new FitAddon.FitAddon();
+    // ── Measure actual font cell size using a hidden probe ────────
+    // This avoids depending on xterm rendering before we know cell dims.
+    function measureCell(fontSize, fontFamily, lineHeight) {
+      var span = document.createElement('span');
+      span.style.cssText =
+        'position:fixed;top:-9999px;left:0;visibility:hidden;white-space:pre;' +
+        'font-family:' + fontFamily + ';' +
+        'font-size:' + fontSize + 'px;' +
+        'line-height:' + lineHeight + ';';
+      // Use many chars to average out sub-pixel rounding
+      span.textContent = 'MMMMMMMMMMMMMMMMMMMM';
+      document.body.appendChild(span);
+      var rect = span.getBoundingClientRect();
+      document.body.removeChild(span);
+      var cellW = rect.width / 20;
+      var cellH = rect.height;
+      console.log('measureCell: cellW=' + cellW.toFixed(2) + ' cellH=' + cellH.toFixed(2));
+      return { w: cellW, h: cellH };
+    }
 
+    var FONT_SIZE   = 13;
+    var FONT_FAMILY = "'Courier New', Courier, monospace";
+    var LINE_HEIGHT = 1.25;
+
+    var cell = measureCell(FONT_SIZE, FONT_FAMILY, LINE_HEIGHT);
+
+    // Ensure we have reasonable fallbacks
+    var cellW = (cell.w > 0) ? cell.w : 7.8;
+    var cellH = (cell.h > 0) ? cell.h : 16.25;
+
+    var iw = window.innerWidth  || 360;
+    var ih = window.innerHeight || 640;
+
+    var initCols = Math.max(2,  Math.floor(iw / cellW));
+    var initRows = Math.max(1,  Math.floor(ih / cellH));
+
+    console.log('initial size: cols=' + initCols + ' rows=' + initRows
+      + ' iw=' + iw + ' ih=' + ih);
+
+    // ── Create terminal with correct initial dimensions ───────────
     var term = new Terminal({
+      cols: initCols,
+      rows: initRows,
       theme: {
         background:    '#111625',
         foreground:    '#e2e8f0',
@@ -58,89 +97,51 @@
         brightBlue:    '#60a5fa', brightMagenta:'#d8b4fe',
         brightCyan:    '#22d3ee', brightWhite:  '#ffffff',
       },
-      fontFamily: "'Courier New', Courier, monospace",
-      fontSize: 13,
-      lineHeight: 1.25,
-      cursorBlink: true,
-      cursorStyle: 'block',
-      scrollback: 5000,
+      fontFamily: FONT_FAMILY,
+      fontSize:   FONT_SIZE,
+      lineHeight: LINE_HEIGHT,
+      cursorBlink:  true,
+      cursorStyle:  'block',
+      scrollback:   5000,
       allowTransparency: false,
-      convertEol: false,
+      convertEol:   false,
     });
 
+    var fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(document.getElementById('terminal'));
-    console.log('xterm open done');
+    console.log('xterm opened: rows=' + term.rows + ' cols=' + term.cols);
 
-    // ── Sizing ─────────────────────────────────────────────────────
-    // Primary: use xterm internal cell metrics + window dimensions
-    // Fallback: FitAddon (works once #terminal is position:fixed)
-    var _fitScheduled = false;
-
+    // ── Resize helper (for window resize / keyboard in-out) ───────
     function doFit() {
-      _fitScheduled = false;
-      try {
-        // Try direct cell-metric approach first
-        var core = term._core;
-        var cellH = 0, cellW = 0;
-        try {
-          var dims = core._renderService.dimensions;
-          // css property available since xterm 5; pixel fallback for xterm 4
-          if (dims.css && dims.css.cell) {
-            cellH = dims.css.cell.height;
-            cellW = dims.css.cell.width;
-          } else if (dims.actualCellHeight) {
-            cellH = dims.actualCellHeight;
-            cellW = dims.actualCellWidth;
-          }
-        } catch(e) {}
-
-        var iw = window.innerWidth;
-        var ih = window.innerHeight;
-
-        if (cellH > 0 && cellW > 0 && ih > 0 && iw > 0) {
-          var rows = Math.max(1, Math.floor(ih / cellH));
-          var cols = Math.max(2, Math.floor(iw / cellW));
-          console.log('manualFit: cellH=' + cellH.toFixed(2) + ' cellW=' + cellW.toFixed(2)
-            + ' ih=' + ih + ' iw=' + iw + ' rows=' + rows + ' cols=' + cols);
-          if (term.rows !== rows || term.cols !== cols) {
-            term.resize(cols, rows);
-          }
-          try { Android.onResize(term.rows, term.cols); } catch(e) {}
-          return;
-        }
-
-        // Fallback: FitAddon (relies on #terminal being position:fixed)
-        fitAddon.fit();
-        console.log('fitAddon fallback: rows=' + term.rows + ' cols=' + term.cols);
-        if (term.rows <= 2 && ih > 100) {
-          scheduleFit(300);
-        } else {
-          try { Android.onResize(term.rows, term.cols); } catch(e) {}
-        }
-      } catch(e) {
-        console.error('doFit error', e);
+      var iw2 = window.innerWidth  || 360;
+      var ih2 = window.innerHeight || 640;
+      var c   = measureCell(term.options.fontSize, term.options.fontFamily, term.options.lineHeight);
+      var cw  = (c.w > 0) ? c.w : cellW;
+      var ch  = (c.h > 0) ? c.h : cellH;
+      var cols2 = Math.max(2, Math.floor(iw2 / cw));
+      var rows2 = Math.max(1, Math.floor(ih2 / ch));
+      console.log('doFit: rows=' + rows2 + ' cols=' + cols2 + ' ih=' + ih2);
+      if (term.rows !== rows2 || term.cols !== cols2) {
+        term.resize(cols2, rows2);
       }
+      try { Android.onResize(term.rows, term.cols); } catch(e) {}
+      term.scrollToBottom();
     }
 
-    function scheduleFit(delay) {
-      if (_fitScheduled) return;
-      _fitScheduled = true;
-      setTimeout(function() { doFit(); }, delay || 0);
-    }
+    // One deferred fit after layout settles, to catch any diff from initial measure
+    setTimeout(doFit, 250);
 
-    // Wait for xterm to paint before first fit (cell metrics need 1 rAF)
-    requestAnimationFrame(function() {
-      doFit();
-      // Extra passes to catch late layout changes
-      setTimeout(doFit, 300);
-      setTimeout(doFit, 800);
+    window.addEventListener('resize', function() {
+      clearTimeout(window._fitTimer);
+      window._fitTimer = setTimeout(doFit, 80);
     });
 
-    window.addEventListener('resize', function() { scheduleFit(50); });
-
     if (window.ResizeObserver) {
-      var ro = new ResizeObserver(function() { scheduleFit(50); });
+      var ro = new ResizeObserver(function() {
+        clearTimeout(window._fitTimer);
+        window._fitTimer = setTimeout(doFit, 80);
+      });
       ro.observe(document.getElementById('terminal'));
     }
 
@@ -176,7 +177,7 @@
       } catch(e) { console.error('writeOutput error', e); }
     };
 
-    // ── Toolbar special keys ────────────────────────────────────
+    // ── Toolbar keys ─────────────────────────────────────────────
     window.injectInput = function(base64) {
       try {
         var binary = atob(base64);
@@ -188,7 +189,10 @@
     };
 
     // ── Settings ────────────────────────────────────────────────
-    window.setFontSize = function(size) { term.options.fontSize = size; doFit(); };
+    window.setFontSize = function(size) {
+      term.options.fontSize = size;
+      doFit();
+    };
     window.setTheme = function(bg, fg) {
       term.options.theme = Object.assign({}, term.options.theme, { background: bg, foreground: fg });
     };
