@@ -86,7 +86,7 @@ static char **jstring_array_to_c(JNIEnv *env, jobjectArray jarr, int *out_len) {
         const char *utf = (*env)->GetStringUTFChars(env, s, NULL);
         if (!utf) {
             LOGE("GetStringUTFChars failed at index %d", i);
-            (*env)->ReleaseObjectArrayElement(env, jarr, s, 0);
+            (*env)->DeleteLocalRef(env, s);
             free_string_array(carr, len);
             if (out_len) *out_len = 0;
             return NULL;

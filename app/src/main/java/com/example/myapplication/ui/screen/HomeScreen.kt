@@ -556,7 +556,7 @@ fun ProjectList(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 4.dp, top = 16.dp, bottom = 4.dp)
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 16.dp, bottom = 4.dp)
             )
         }
         item {
