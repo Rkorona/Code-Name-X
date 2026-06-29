@@ -35,6 +35,8 @@ enum class TabWidthMode(val label: String, val size: Int) {
 }
 
 enum class AutoSaveMode(val label: String, val ms: Long) {
+    S5("5 秒", 5_000L),
+    S15("15 秒", 15_000L),
     S30("30 秒", 30_000L),
     MIN1("1 分钟", 60_000L),
     MIN3("3 分钟", 180_000L),

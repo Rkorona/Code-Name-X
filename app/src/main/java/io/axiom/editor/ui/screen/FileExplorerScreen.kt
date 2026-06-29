@@ -1,6 +1,8 @@
 package io.axiom.editor.ui.screen
 
+import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import io.axiom.editor.ui.model.Project
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -68,13 +71,20 @@ fun FileExplorerScreen(
     val context = LocalContext.current
 
     var loadState by remember { mutableStateOf<LoadState>(LoadState.Loading) }
-    // 核心修复：初始值不限死，在加载成功后同步更新为 root 的真实路径
     var expandedPaths by remember { mutableStateOf(setOf(project.localPath ?: "")) }
     var openingFile by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    // 懒加载：路径 -> 已加载的直接子节点列表
+    var childrenCache by remember { mutableStateOf<Map<String, List<FileNode>>>(emptyMap()) }
+    // 正在加载的目录路径集合（显示 spinner）
+    var loadingDirs by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // SAF 项目的树根 URI，供子目录懒加载使用
+    var safTreeUri by remember { mutableStateOf<Uri?>(null) }
 
-    // 在 IO 线程加载文件树
+    // 在 IO 线程浅层加载文件树（只扫描根 + 直接子节点）
     LaunchedEffect(project.localPath) {
         loadState = LoadState.Loading
+        childrenCache = emptyMap()
         val path = project.localPath
         if (path.isNullOrBlank()) {
             loadState = LoadState.Error("该项目没有关联本地路径")
@@ -86,11 +96,11 @@ fun FileExplorerScreen(
                     val treeUri = Uri.parse(path)
                     val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
                         ?: return@runCatching LoadState.Error("无法访问该目录，权限可能已失效")
-                    buildNodeFromSaf(rootDoc)
+                    buildShallowFromSaf(rootDoc)
                 } else {
                     val file = File(path)
                     if (!file.exists()) return@runCatching LoadState.Error("目录不存在：$path")
-                    buildNodeFromFile(file)
+                    buildShallowFromFile(file)
                 }
                 LoadState.Loaded(root)
             }.getOrElse { e ->
@@ -98,10 +108,9 @@ fun FileExplorerScreen(
             }
         }
 
-        // 核心修复：加载成功后，自动将 expandedPaths 的初始项同步为 root 真实的 document URI 路径，
-        // 否则 SAF 树根路径无法匹配，首屏会显示一片空白！
         if (result is LoadState.Loaded) {
             expandedPaths = setOf(result.root.path)
+            if (path.startsWith("content://")) safTreeUri = Uri.parse(path)
         }
         loadState = result
     }
@@ -188,8 +197,8 @@ fun FileExplorerScreen(
                 }
 
                 is LoadState.Loaded -> {
-                    val displayRows = remember(state.root, expandedPaths) {
-                        flattenVisible(state.root, depth = 0, expanded = expandedPaths)
+                    val displayRows = remember(state.root, expandedPaths, childrenCache) {
+                        flattenVisible(state.root, depth = 0, expanded = expandedPaths, childrenCache = childrenCache)
                     }
 
                     if (displayRows.isEmpty()) {
@@ -222,15 +231,29 @@ fun FileExplorerScreen(
                                 FileTreeRow(
                                     row = row,
                                     isExpanded = isExpanded,
+                                    isLoading = row.node.path in loadingDirs,
                                     onClick = {
                                         if (row.node.isDirectory) {
-                                            expandedPaths = if (isExpanded) {
-                                                expandedPaths - row.node.path
+                                            if (isExpanded) {
+                                                expandedPaths = expandedPaths - row.node.path
                                             } else {
-                                                expandedPaths + row.node.path
+                                                expandedPaths = expandedPaths + row.node.path
+                                                // 懒加载子节点（未缓存且未在加载中时触发）
+                                                val alreadyLoaded = row.node.path in childrenCache || row.node.children.isNotEmpty()
+                                                if (!alreadyLoaded && row.node.path !in loadingDirs) {
+                                                    loadingDirs = loadingDirs + row.node.path
+                                                    coroutineScope.launch {
+                                                        val children = withContext(Dispatchers.IO) {
+                                                            val tUri = safTreeUri
+                                                            if (tUri != null) loadSafChildren(context, tUri, row.node.path)
+                                                            else loadFileChildren(row.node.path)
+                                                        }
+                                                        childrenCache = childrenCache + (row.node.path to children)
+                                                        loadingDirs = loadingDirs - row.node.path
+                                                    }
+                                                }
                                             }
                                         } else {
-                                            // 极简跳转优化，不再做冗余的后台 IO 调度（因为异步读取文件内容已完美移交 EditorScreen 内部承接）
                                             if (!openingFile) {
                                                 openingFile = true
                                                 onOpenFile(row.node.path)
@@ -255,6 +278,7 @@ fun FileExplorerScreen(
 private fun FileTreeRow(
     row: DisplayRow,
     isExpanded: Boolean,
+    isLoading: Boolean,
     onClick: () -> Unit
 ) {
     val node = row.node
@@ -273,7 +297,7 @@ private fun FileTreeRow(
                 else Icons.Outlined.Folder,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = Color(0xFF7C9CBF) // 文件夹琥珀色
+                tint = Color(0xFF7C9CBF)
             )
         } else {
             Box(
@@ -304,83 +328,117 @@ private fun FileTreeRow(
             modifier = Modifier.weight(1f)
         )
 
-        if (node.isDirectory && node.children.isNotEmpty()) {
-            Icon(
-                imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown
-                else Icons.Default.KeyboardArrowRight,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-            )
+        if (node.isDirectory) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 1.5.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            } else {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown
+                    else Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                )
+            }
         }
     }
 }
 
 // ─────────────────────────────────────────────
-// 树构建：java.io.File（本地绝对路径）
+// 树构建：浅层扫描（只扫描根 + 直接子节点）
 // ─────────────────────────────────────────────
-private fun buildNodeFromFile(file: File): FileNode {
-    return if (file.isDirectory) {
-        val sorted = (file.listFiles() ?: emptyArray())
-            .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-        FileNode(
-            name = file.name,
-            path = file.absolutePath,
-            isDirectory = true,
-            extension = "",
-            children = sorted.map { buildNodeFromFile(it) }
-        )
-    } else {
-        FileNode(
-            name = file.name,
-            path = file.absolutePath,
-            isDirectory = false,
-            extension = file.extension.lowercase()
-        )
-    }
+private fun buildShallowFromFile(file: File): FileNode {
+    if (!file.isDirectory) return FileNode(file.name, file.absolutePath, false, file.extension.lowercase())
+    val children = (file.listFiles() ?: emptyArray())
+        .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        .map { child ->
+            FileNode(
+                name = child.name,
+                path = child.absolutePath,
+                isDirectory = child.isDirectory,
+                extension = if (child.isDirectory) "" else child.extension.lowercase()
+            )
+        }
+    return FileNode(file.name, file.absolutePath, true, "", children)
 }
 
-// ─────────────────────────────────────────────
-// 树构建：SAF DocumentFile（content URI）
-// ─────────────────────────────────────────────
-private fun buildNodeFromSaf(doc: DocumentFile): FileNode {
+private fun buildShallowFromSaf(doc: DocumentFile): FileNode {
     val name = doc.name ?: "未知"
-    return if (doc.isDirectory) {
-        val sorted = doc.listFiles()
+    if (!doc.isDirectory) return FileNode(name, doc.uri.toString(), false, name.substringAfterLast('.', "").lowercase())
+    val children = doc.listFiles()
+        .sortedWith(compareBy({ !it.isDirectory }, { it.name?.lowercase() ?: "" }))
+        .map { child ->
+            val cName = child.name ?: "未知"
+            FileNode(
+                name = cName,
+                path = child.uri.toString(),
+                isDirectory = child.isDirectory,
+                extension = if (child.isDirectory) "" else cName.substringAfterLast('.', "").lowercase()
+            )
+        }
+    return FileNode(name, doc.uri.toString(), true, "", children)
+}
+
+// ─────────────────────────────────────────────
+// 懒加载：展开目录时按需扫描子节点
+// ─────────────────────────────────────────────
+private fun loadFileChildren(path: String): List<FileNode> {
+    val file = File(path)
+    return (file.listFiles() ?: emptyArray())
+        .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        .map { child ->
+            FileNode(
+                name = child.name,
+                path = child.absolutePath,
+                isDirectory = child.isDirectory,
+                extension = if (child.isDirectory) "" else child.extension.lowercase()
+            )
+        }
+}
+
+private fun loadSafChildren(context: Context, treeUri: Uri, docPath: String): List<FileNode> {
+    return try {
+        val docUri = Uri.parse(docPath)
+        val docId = DocumentsContract.getDocumentId(docUri)
+        val treeDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+        val docFile = DocumentFile.fromTreeUri(context, treeDocUri) ?: return emptyList()
+        docFile.listFiles()
             .sortedWith(compareBy({ !it.isDirectory }, { it.name?.lowercase() ?: "" }))
-        FileNode(
-            name = name,
-            path = doc.uri.toString(),
-            isDirectory = true,
-            extension = "",
-            children = sorted.map { buildNodeFromSaf(it) }
-        )
-    } else {
-        val ext = name.substringAfterLast('.', "").lowercase()
-        FileNode(
-            name = name,
-            path = doc.uri.toString(),
-            isDirectory = false,
-            extension = ext
-        )
+            .map { child ->
+                val cName = child.name ?: "未知"
+                FileNode(
+                    name = cName,
+                    path = child.uri.toString(),
+                    isDirectory = child.isDirectory,
+                    extension = if (child.isDirectory) "" else cName.substringAfterLast('.', "").lowercase()
+                )
+            }
+    } catch (e: Exception) {
+        emptyList()
     }
 }
 
 // ─────────────────────────────────────────────
-// 将树展平为可见行列表
+// 将树展平为可见行列表（使用懒加载缓存）
 // ─────────────────────────────────────────────
 private fun flattenVisible(
     node: FileNode,
     depth: Int,
-    expanded: Set<String>
+    expanded: Set<String>,
+    childrenCache: Map<String, List<FileNode>>
 ): List<DisplayRow> {
+    val children = childrenCache[node.path] ?: node.children
     if (depth == 0) {
         if (node.path !in expanded) return emptyList()
-        return node.children.flatMap { flattenVisible(it, 1, expanded) }
+        return children.flatMap { flattenVisible(it, 1, expanded, childrenCache) }
     }
     val selfRow = DisplayRow(node, depth)
     return if (node.isDirectory && node.path in expanded) {
-        listOf(selfRow) + node.children.flatMap { flattenVisible(it, depth + 1, expanded) }
+        listOf(selfRow) + children.flatMap { flattenVisible(it, depth + 1, expanded, childrenCache) }
     } else {
         listOf(selfRow)
     }

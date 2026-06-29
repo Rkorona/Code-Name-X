@@ -18,7 +18,7 @@ class SettingsStore(context: Context) {
         wordWrap           = prefs.getBoolean("wordWrap", false),
         tabWidth           = TabWidthMode.entries.getOrElse(prefs.getInt("tabWidth", 1)) { TabWidthMode.FOUR },
         autoSave           = prefs.getBoolean("autoSave", false),
-        autoSaveInterval   = AutoSaveMode.entries.getOrElse(prefs.getInt("autoSaveInterval", 1)) { AutoSaveMode.MIN1 },
+        autoSaveInterval   = AutoSaveMode.entries.find { it.name == prefs.getString("autoSaveInterval", "MIN1") } ?: AutoSaveMode.MIN1,
         fileEncoding       = EncodingMode.entries.getOrElse(prefs.getInt("fileEncoding", 0)) { EncodingMode.AUTO },
         enableFileTabs     = prefs.getBoolean("enableFileTabs", true),
         terminalFontSize   = prefs.getFloat("terminalFontSize", 13f),
@@ -42,7 +42,7 @@ class SettingsStore(context: Context) {
             putBoolean("wordWrap",       s.wordWrap)
             putInt("tabWidth",           s.tabWidth.ordinal)
             putBoolean("autoSave",       s.autoSave)
-            putInt("autoSaveInterval",   s.autoSaveInterval.ordinal)
+            putString("autoSaveInterval", s.autoSaveInterval.name)
             putInt("fileEncoding",       s.fileEncoding.ordinal)
             putBoolean("enableFileTabs", s.enableFileTabs)
             putFloat("terminalFontSize", s.terminalFontSize)

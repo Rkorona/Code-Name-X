@@ -442,6 +442,10 @@ fun FileExplorerSheet(
     var expandedPaths by remember(project.localPath) { mutableStateOf(setOf(project.localPath ?: "")) }
     var rootDocPath by remember(project.localPath) { mutableStateOf("") }
     var openingFile by remember { mutableStateOf(false) }
+    // 懒加载状态
+    var childrenCache by remember(project.localPath) { mutableStateOf<Map<String, List<SheetFileNode>>>(emptyMap()) }
+    var loadingDirs by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var safTreeUri by remember(project.localPath) { mutableStateOf<Uri?>(null) }
 
     var contextNode by remember { mutableStateOf<SheetFileNode?>(null) }
     var showContextSheet by remember { mutableStateOf(false) }
@@ -486,6 +490,7 @@ fun FileExplorerSheet(
 
     LaunchedEffect(project.localPath, reloadTrigger) {
         loadState = SheetLoadState.Loading
+        childrenCache = emptyMap()
         val path = project.localPath
         if (path.isNullOrBlank()) {
             loadState = SheetLoadState.Error("该项目没有关联本地路径")
@@ -511,6 +516,7 @@ fun FileExplorerSheet(
         if (result is SheetLoadState.Loaded) {
             rootDocPath = result.root.path
             expandedPaths = setOf(result.root.path)
+            if (path.startsWith("content://")) safTreeUri = Uri.parse(path)
         }
         loadState = result
     }
@@ -629,8 +635,8 @@ fun FileExplorerSheet(
                             }
                         }
                         is SheetLoadState.Loaded -> {
-                            val displayRows = remember(state.root, expandedPaths) {
-                                flattenSheetVisible(state.root, depth = 0, expanded = expandedPaths)
+                            val displayRows = remember(state.root, expandedPaths, childrenCache) {
+                                flattenSheetVisible(state.root, depth = 0, expanded = expandedPaths, childrenCache = childrenCache)
                             }
 
                             if (displayRows.isEmpty()) {
@@ -644,9 +650,27 @@ fun FileExplorerSheet(
                                         SheetFileTreeRow(
                                             row = row,
                                             isExpanded = isExpanded,
+                                            isLoading = row.node.path in loadingDirs,
                                             onClick = {
                                                 if (row.node.isDirectory) {
-                                                    expandedPaths = if (isExpanded) expandedPaths - row.node.path else expandedPaths + row.node.path
+                                                    if (isExpanded) {
+                                                        expandedPaths = expandedPaths - row.node.path
+                                                    } else {
+                                                        expandedPaths = expandedPaths + row.node.path
+                                                        val alreadyLoaded = row.node.path in childrenCache || row.node.children.isNotEmpty()
+                                                        if (!alreadyLoaded && row.node.path !in loadingDirs) {
+                                                            loadingDirs = loadingDirs + row.node.path
+                                                            scope.launch {
+                                                                val children = withContext(Dispatchers.IO) {
+                                                                    val tUri = safTreeUri
+                                                                    if (tUri != null) loadSheetSafChildren(context, tUri, row.node.path)
+                                                                    else loadSheetFileChildren(row.node.path)
+                                                                }
+                                                                childrenCache = childrenCache + (row.node.path to children)
+                                                                loadingDirs = loadingDirs - row.node.path
+                                                            }
+                                                        }
+                                                    }
                                                 } else {
                                                     if (!openingFile) {
                                                         openingFile = true
@@ -804,15 +828,20 @@ fun FileExplorerSheet(
 }
 
 @Composable
-private fun SheetFileTreeRow(row: SheetDisplayRow, isExpanded: Boolean, onClick: () -> Unit, onContextMenu: () -> Unit) {
+private fun SheetFileTreeRow(row: SheetDisplayRow, isExpanded: Boolean, isLoading: Boolean, onClick: () -> Unit, onContextMenu: () -> Unit) {
     val node = row.node
     val indentDp = (row.depth * 18 + 8).dp
     val chevronDeg by animateFloatAsState(targetValue = if (isExpanded) 90f else 0f, label = "chevron_${node.path}")
 
     Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = indentDp, end = 4.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
         if (node.isDirectory) {
-            Icon(Icons.Outlined.ChevronRight, null, modifier = Modifier.size(18.dp).rotate(chevronDeg), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
-            Spacer(Modifier.width(4.dp))
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                Spacer(Modifier.width(4.dp))
+            } else {
+                Icon(Icons.Outlined.ChevronRight, null, modifier = Modifier.size(18.dp).rotate(chevronDeg), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
+                Spacer(Modifier.width(4.dp))
+            }
             Icon(imageVector = if (isExpanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color(0xFF7C9CBF))
         } else {
             Spacer(Modifier.width(22.dp))
@@ -863,38 +892,67 @@ private fun SheetInputDialog(title: String, label: String, initialText: String =
 }
 
 private fun buildSheetNodeFromFile(file: File): SheetFileNode {
-    return if (file.isDirectory) {
-        val children = (file.listFiles() ?: emptyArray())
-            .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-            .map { buildSheetNodeFromFile(it) }
-        SheetFileNode(name = file.name, path = file.absolutePath, isDirectory = true, extension = "", children = children)
-    } else {
-        SheetFileNode(name = file.name, path = file.absolutePath, isDirectory = false, extension = file.extension.lowercase())
-    }
+    if (!file.isDirectory) return SheetFileNode(file.name, file.absolutePath, false, file.extension.lowercase())
+    val children = (file.listFiles() ?: emptyArray())
+        .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        .map { child ->
+            SheetFileNode(child.name, child.absolutePath, child.isDirectory, if (child.isDirectory) "" else child.extension.lowercase())
+        }
+    return SheetFileNode(name = file.name, path = file.absolutePath, isDirectory = true, extension = "", children = children)
 }
 
 private fun buildSheetNodeFromSaf(context: Context, doc: DocumentFile): SheetFileNode {
     val name = doc.name ?: "未知"
     val isDir = doc.isDirectory || doc.type == DocumentsContract.Document.MIME_TYPE_DIR
-    return if (isDir) {
-        val children = doc.listFiles()
+    if (!isDir) return SheetFileNode(name, doc.uri.toString(), false, name.substringAfterLast('.', "").lowercase())
+    val children = doc.listFiles()
+        .filter { it.name != null }
+        .sortedWith(compareBy({ !(it.isDirectory || it.type == DocumentsContract.Document.MIME_TYPE_DIR) }, { it.name?.lowercase() ?: "" }))
+        .map { child ->
+            val cName = child.name ?: "未知"
+            val cIsDir = child.isDirectory || child.type == DocumentsContract.Document.MIME_TYPE_DIR
+            SheetFileNode(cName, child.uri.toString(), cIsDir, if (cIsDir) "" else cName.substringAfterLast('.', "").lowercase())
+        }
+    return SheetFileNode(name = name, path = doc.uri.toString(), isDirectory = true, extension = "", children = children)
+}
+
+private fun loadSheetFileChildren(path: String): List<SheetFileNode> {
+    val file = File(path)
+    return (file.listFiles() ?: emptyArray())
+        .sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        .map { child ->
+            SheetFileNode(child.name, child.absolutePath, child.isDirectory, if (child.isDirectory) "" else child.extension.lowercase())
+        }
+}
+
+private fun loadSheetSafChildren(context: Context, treeUri: Uri, docPath: String): List<SheetFileNode> {
+    return try {
+        val docUri = Uri.parse(docPath)
+        val docId = DocumentsContract.getDocumentId(docUri)
+        val treeDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+        val docFile = DocumentFile.fromTreeUri(context, treeDocUri) ?: return emptyList()
+        docFile.listFiles()
             .filter { it.name != null }
             .sortedWith(compareBy({ !(it.isDirectory || it.type == DocumentsContract.Document.MIME_TYPE_DIR) }, { it.name?.lowercase() ?: "" }))
-            .map { buildSheetNodeFromSaf(context, it) }
-        SheetFileNode(name = name, path = doc.uri.toString(), isDirectory = true, extension = "", children = children)
-    } else {
-        SheetFileNode(name = name, path = doc.uri.toString(), isDirectory = false, extension = name.substringAfterLast('.', "").lowercase())
+            .map { child ->
+                val cName = child.name ?: "未知"
+                val cIsDir = child.isDirectory || child.type == DocumentsContract.Document.MIME_TYPE_DIR
+                SheetFileNode(cName, child.uri.toString(), cIsDir, if (cIsDir) "" else cName.substringAfterLast('.', "").lowercase())
+            }
+    } catch (e: Exception) {
+        emptyList()
     }
 }
 
-private fun flattenSheetVisible(node: SheetFileNode, depth: Int, expanded: Set<String>): List<SheetDisplayRow> {
+private fun flattenSheetVisible(node: SheetFileNode, depth: Int, expanded: Set<String>, childrenCache: Map<String, List<SheetFileNode>>): List<SheetDisplayRow> {
+    val children = childrenCache[node.path] ?: node.children
     if (depth == 0) {
         if (node.path !in expanded) return emptyList()
-        return node.children.flatMap { flattenSheetVisible(it, 1, expanded) }
+        return children.flatMap { flattenSheetVisible(it, 1, expanded, childrenCache) }
     }
     val selfRow = SheetDisplayRow(node, depth)
     return if (node.isDirectory && node.path in expanded) {
-        listOf(selfRow) + node.children.flatMap { flattenSheetVisible(it, depth + 1, expanded) }
+        listOf(selfRow) + children.flatMap { flattenSheetVisible(it, depth + 1, expanded, childrenCache) }
     } else listOf(selfRow)
 }
 
