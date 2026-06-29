@@ -3,9 +3,11 @@
 package io.axiom.editor.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -51,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,6 +98,12 @@ fun GitHubScreen(
 
     var showLoginSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
 
     Box(
         modifier = modifier
@@ -105,7 +115,8 @@ fun GitHubScreen(
             GitHubTopBar(
                 isLoggedIn = isLoggedIn,
                 avatarUrl = userAvatarUrl,
-                onAddClick = { showLoginSheet = true }
+                onAddClick = { showLoginSheet = true },
+                isScrolled = isScrolled
             )
 
             val filteredRepos = if (searchQuery.isBlank()) {
@@ -119,6 +130,7 @@ fun GitHubScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
@@ -174,11 +186,19 @@ fun GitHubScreen(
 private fun GitHubTopBar(
     isLoggedIn: Boolean,
     avatarUrl: String?,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    isScrolled: Boolean = false
 ) {
+    val barBgColor by animateColorAsState(
+        targetValue = if (isScrolled) AxiomColors.CardBackground else AxiomColors.Background,
+        animationSpec = tween(durationMillis = 250),
+        label = "githubTopBarBg"
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(barBgColor)
             .padding(horizontal = 16.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically

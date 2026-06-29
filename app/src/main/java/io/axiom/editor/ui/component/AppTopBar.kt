@@ -243,15 +243,6 @@ fun AppTopBar(
                 )
             }
         }
-        1 -> {
-            TopAppBar(
-                title = { Text("GitHub Repositories", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = barBgColor
-                ),
-                modifier = modifier
-            )
-        }
         3 -> {
             TopAppBar(
                 title = { Text("设置", fontWeight = FontWeight.Bold) },
