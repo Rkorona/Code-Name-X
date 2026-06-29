@@ -658,7 +658,7 @@ fun EditorScreen(
 
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
 
-                        settings.apply {
+                        this.settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
                             allowFileAccess = true

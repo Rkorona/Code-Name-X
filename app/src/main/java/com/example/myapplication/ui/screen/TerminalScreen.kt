@@ -264,7 +264,7 @@ fun TerminalScreen(
                 AndroidView(
                     factory = { ctx ->
                         WebView(ctx).apply {
-                            settings.apply {
+                            this.settings.apply {
                                 javaScriptEnabled = true
                                 domStorageEnabled = true
                                 allowFileAccess  = true
@@ -273,10 +273,9 @@ fun TerminalScreen(
                                 displayZoomControls = false
                                 useWideViewPort = true
                                 loadWithOverviewMode = false
+                                allowFileAccessFromFileURLs = true
+                                allowUniversalAccessFromFileURLs = true
                             }
-                            settings.allowFileAccess = true
-                            settings.allowFileAccessFromFileURLs = true
-                            settings.allowUniversalAccessFromFileURLs = true
 
                             webChromeClient = object : android.webkit.WebChromeClient() {
                                 override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage): Boolean {
