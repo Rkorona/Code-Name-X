@@ -214,7 +214,7 @@ fun EditorScreen(
         // 注入或更新自定义样式块（字号、行号、自动补全、字体粗细）
         val css = buildString {
             append(".cm-content,.cm-gutters{font-size:${fs}px!important}")
-            append(".cm-content{font-weight:${fw}!important}")
+            append(".cm-content,.cm-content .cm-line,.cm-content span{font-weight:${fw}!important}")
             // 收紧行号列内边距，避免默认过宽
             append(".cm-lineNumbers .cm-gutterElement{padding:0 6px 0 2px!important}")
             append(".cm-lineNumbers{min-width:0!important}")
@@ -328,6 +328,7 @@ fun EditorScreen(
 
     // 文件树底部抽屉状态
     var showFileTree by remember { mutableStateOf(false) }
+    var showFileDropdown by remember { mutableStateOf(false) }
     val treeProject = remember(projectName, projectLocalPath) {
         if (projectLocalPath != null) {
             Project(
@@ -490,53 +491,106 @@ fun EditorScreen(
             Column {
                 TopAppBar(
                 title = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        // 文件名 + 语言类型徽章
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    val canShowFileDropdown = !settings.enableFileTabs && !isSafUri
+                    val siblingFiles = remember(filePath) {
+                        if (!isSafUri) {
+                            File(filePath).parentFile?.listFiles()
+                                ?.filter { it.isFile }
+                                ?.sortedBy { it.name.lowercase() }
+                                ?: emptyList()
+                        } else emptyList()
+                    }
+                    Box {
+                        Column(
+                            modifier = if (canShowFileDropdown && siblingFiles.size > 1)
+                                Modifier.clickable { showFileDropdown = true } else Modifier,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Text(
-                                text = fileName,
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = FontWeight.SemiBold
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (fileExtension.isNotBlank()) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(4.dp),
-                                    tonalElevation = 0.dp
-                                ) {
-                                    Text(
-                                        text = fileExtension.uppercase(),
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 0.5.sp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            // 文件名 + 语言类型徽章 + 下拉箭头
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = fileName,
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (fileExtension.isNotBlank()) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        shape = RoundedCornerShape(4.dp),
+                                        tonalElevation = 0.dp
+                                    ) {
+                                        Text(
+                                            text = fileExtension.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                letterSpacing = 0.5.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                if (canShowFileDropdown && siblingFiles.size > 1) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ArrowDropDown,
+                                        contentDescription = "切换文件",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                     )
                                 }
                             }
+                            // 文件路径提示
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = if (isSafUri) "外部文件" else filePath
+                                        .substringBeforeLast('/')
+                                        .let { dir -> if (dir.length > 28) "…" + dir.takeLast(28) else dir },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                        // 文件路径提示
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        // ── 同目录文件下拉菜单（无选项卡模式）──
+                        DropdownMenu(
+                            expanded = showFileDropdown,
+                            onDismissRequest = { showFileDropdown = false }
                         ) {
-                            Text(
-                                text = if (isSafUri) "外部文件" else filePath
-                                    .substringBeforeLast('/')
-                                    .let { dir -> if (dir.length > 28) "…" + dir.takeLast(28) else dir },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            siblingFiles.forEach { f ->
+                                val isCurrentFile = f.absolutePath == filePath
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = f.name,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = if (isCurrentFile) FontWeight.Bold else FontWeight.Normal
+                                            ),
+                                            color = if (isCurrentFile)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        showFileDropdown = false
+                                        if (!isCurrentFile) {
+                                            onOpenNewTab?.invoke(f.absolutePath)
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 },
@@ -857,11 +911,7 @@ fun EditorScreen(
             onOpenFile = { newFilePath ->
                 showFileTree = false
                 if (newFilePath != filePath) {
-                    if (settings.enableFileTabs && onOpenNewTab != null) {
-                        onOpenNewTab(newFilePath)
-                    } else {
-                        onNavigateBack()
-                    }
+                    onOpenNewTab?.invoke(newFilePath)
                 }
             }
         )
