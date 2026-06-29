@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.SortByAlpha
+import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -364,8 +366,7 @@ fun HomeScreen(
             }
         },
         bottomBar = {
-            // 关键优化：当处于终端页面 (Tab 2) 且输入法软件盘弹起时，动态隐藏底部导航栏，让终端获得最大纵向空间并防止遮挡。
-            if (selectedTab != 2 || !WindowInsets.isImeVisible) {
+            if (!WindowInsets.isImeVisible) {
                 AppBottomNavBar(
                     selectedTab = selectedTab,
                     onTabSelected = onTabSelected
@@ -382,6 +383,7 @@ fun HomeScreen(
                     sortOrder = sortOrder,
                     isSearchActive = isSearchActive,
                     onProjectClick = onProjectClick,
+                    onTerminalClick = { onTabSelected(2) },
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -441,61 +443,18 @@ fun HomeScreen(
 fun ProjectList(
     projects: List<Project>,
     onProjectClick: (Project) -> Unit,
+    onTerminalClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     searchQuery: String = "",
     sortOrder: ProjectSortOrder = ProjectSortOrder.DEFAULT,
     isSearchActive: Boolean = false,
 ) {
-    if (projects.isEmpty()) {
-        Box(
-            modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.FolderOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(52.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                )
-                if (isSearchActive && searchQuery.isNotBlank()) {
-                    Text(
-                        text = "未找到匹配「$searchQuery」的项目",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "请检查拼写或尝试其他关键词",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    )
-                } else {
-                    Text(
-                        text = "还没有项目",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "点击右下角的 + 按钮来添加项目",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    )
-                }
-            }
-        }
-        return
-    }
-
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // ── Projects section header ──
         item {
             Row(
                 modifier = Modifier
@@ -538,12 +497,73 @@ fun ProjectList(
             }
         }
 
-        items(projects, key = { it.id }) { project ->
-            ProjectCard(
-                project = project,
-                onClick = { onProjectClick(project) }
+        // ── Project cards or empty state ──
+        if (projects.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.FolderOpen,
+                        contentDescription = null,
+                        modifier = Modifier.size(52.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    )
+                    if (isSearchActive && searchQuery.isNotBlank()) {
+                        Text(
+                            text = "未找到匹配「$searchQuery」的项目",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "请检查拼写或尝试其他关键词",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    } else {
+                        Text(
+                            text = "还没有项目",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "点击右下角的 + 按钮来添加项目",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+            }
+        } else {
+            items(projects, key = { it.id }) { project ->
+                ProjectCard(
+                    project = project,
+                    onClick = { onProjectClick(project) }
+                )
+            }
+        }
+
+        // ── Terminal section ──
+        item {
+            Text(
+                text = "Terminal",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 4.dp, top = 16.dp, bottom = 4.dp)
             )
         }
+        item {
+            TerminalCard(onClick = onTerminalClick)
+        }
+        // Bottom spacer so the FAB doesn't overlap the last card
+        item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 }
 
@@ -603,6 +623,88 @@ fun ProjectCard(
                     maxLines = 1
                 )
             }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// 终端入口卡片
+// ─────────────────────────────────────────────
+@Composable
+fun TerminalCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1C2330)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = ">_",
+                    color = Color(0xFF22C55E),
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Linux Terminal",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF1C2330)
+                    ) {
+                        Text(
+                            text = "DEBIAN",
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            color = Color(0xFF22C55E),
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "Debian 13 · PRoot 容器",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Icon(
+                imageVector = Icons.Outlined.Terminal,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

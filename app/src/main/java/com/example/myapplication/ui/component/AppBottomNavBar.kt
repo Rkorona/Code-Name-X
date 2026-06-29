@@ -4,7 +4,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -39,18 +38,6 @@ fun AppBottomNavBar(
                 )
             },
             label = { Text("GitHub") }
-        )
-        // 插入全新的终端 Tab（索引为 2）
-        NavigationBarItem(
-            selected = selectedTab == 2,
-            onClick = { onTabSelected(2) },
-            icon = {
-                Icon(
-                    imageVector = Icons.Outlined.Terminal,
-                    contentDescription = "终端"
-                )
-            },
-            label = { Text("终端") }
         )
         NavigationBarItem(
             selected = selectedTab == 3,
