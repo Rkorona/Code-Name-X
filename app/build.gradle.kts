@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.myapplication"
+    namespace = "io.axiom.editor"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.myapplication"
+        applicationId = "io.axiom.editor"
         minSdk = 30
         targetSdk = 37
         versionCode = 1
