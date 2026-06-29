@@ -272,7 +272,7 @@ fun HomeScreen(
                         }
                     } else {
                         TopAppBar(
-                            expandedHeight = 52.dp,
+                            expandedHeight = 64.dp,
                             navigationIcon = {
                                 IconButton(onClick = {}) {
                                     Icon(
@@ -356,14 +356,14 @@ fun HomeScreen(
                 }
                 1 -> {
                     TopAppBar(
-                        expandedHeight = 52.dp,
+                        expandedHeight = 64.dp,
                         title = { Text("GitHub Repositories", fontWeight = FontWeight.Bold) },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
                 3 -> {
                     TopAppBar(
-                        expandedHeight = 52.dp,
+                        expandedHeight = 64.dp,
                         title = { Text("设置", fontWeight = FontWeight.Bold) },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
@@ -530,7 +530,7 @@ fun ProjectList(
                     Icon(
                         imageVector = Icons.Outlined.FolderOpen,
                         contentDescription = null,
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(64.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
                     if (isSearchActive && searchQuery.isNotBlank()) {
