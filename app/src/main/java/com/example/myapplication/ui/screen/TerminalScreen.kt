@@ -94,20 +94,6 @@ fun TerminalScreen(
         }
     }
 
-    // One-time test write to verify xterm rendering when page is ready
-    LaunchedEffect(pageReady) {
-        if (pageReady) {
-            Log.d("TerminalScreen", "pageReady true — injecting JS render test")
-            webViewRef.value?.post {
-                try {
-                    webViewRef.value?.evaluateJavascript("term.write('JS_RENDER_TEST\\n')", null)
-                } catch (e: Exception) {
-                    Log.e("TerminalScreen", "inject test failed", e)
-                }
-            }
-        }
-    }
-
     LaunchedEffect(envState, pageReady) {
         if (envState == EnvironmentState.Ready && pageReady) {
             vm.startShellIfNeeded()
