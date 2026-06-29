@@ -2,6 +2,7 @@ package io.axiom.editor.ui.screen
 
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
+import android.view.MotionEvent
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
@@ -12,6 +13,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import kotlin.math.abs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -196,6 +198,11 @@ fun EditorScreen(
         // 注入或更新自定义样式块（字号、行号、自动补全）
         val css = buildString {
             append(".cm-content,.cm-gutters{font-size:${fs}px!important}")
+            // 收紧行号列内边距，避免默认过宽
+            append(".cm-lineNumbers .cm-gutterElement{padding:0 6px 0 2px!important}")
+            append(".cm-lineNumbers{min-width:0!important}")
+            // 确保 scroller 横向可滚动，touch-action 允许双向平移
+            append(".cm-scroller{overflow:auto!important;touch-action:pan-x pan-y!important}")
             if (!showGutter) append(".cm-gutters{display:none!important}")
             if (!autocomplete) append(".cm-tooltip{display:none!important}")
         }
@@ -728,6 +735,48 @@ fun EditorScreen(
                         }
 
                         loadUrl("https://appassets.androidplatform.net/assets/editor/index.html")
+
+                        // 允许 CodeMirror 内部横向滚动：
+                        // 在超过触摸斜率阈值后判断手势方向，一旦确认横向则在整个手势生命周期
+                        // 内持续禁止父层拦截，使 cm-scroller overflow:auto 的横向滚动正常工作。
+                        val touchSlop = android.view.ViewConfiguration.get(ctx).scaledTouchSlop
+                        var touchStartX = 0f
+                        var touchStartY = 0f
+                        var horizontalScrollLocked = false
+                        @Suppress("ClickableViewAccessibility")
+                        setOnTouchListener { v, event ->
+                            when (event.actionMasked) {
+                                MotionEvent.ACTION_DOWN -> {
+                                    touchStartX = event.x
+                                    touchStartY = event.y
+                                    horizontalScrollLocked = false
+                                    // DOWN 阶段不干预，让父层保留初始判断权
+                                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                                }
+                                MotionEvent.ACTION_MOVE -> {
+                                    if (!horizontalScrollLocked) {
+                                        val dx = abs(event.x - touchStartX)
+                                        val dy = abs(event.y - touchStartY)
+                                        // 超过系统触摸斜率阈值后才判断方向，避免微抖动误判
+                                        if (dx > touchSlop || dy > touchSlop) {
+                                            if (dx > dy) {
+                                                // 确认横向手势：锁定并持续禁止父层拦截
+                                                horizontalScrollLocked = true
+                                                v.parent?.requestDisallowInterceptTouchEvent(true)
+                                            }
+                                            // 纵向手势：不修改拦截状态，让父层/WebView 正常处理
+                                        }
+                                    }
+                                    // horizontalScrollLocked 为 true 时不再重复调用，保持已设置的状态
+                                }
+                                MotionEvent.ACTION_UP,
+                                MotionEvent.ACTION_CANCEL -> {
+                                    horizontalScrollLocked = false
+                                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                                }
+                            }
+                            false // 不消费事件，继续交给 WebView 默认处理
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
