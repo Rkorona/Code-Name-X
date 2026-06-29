@@ -76,7 +76,6 @@ fun TerminalScreen(
     val envState           = vm.envState
     val downloadProgress   = vm.downloadProgress
     val currentStatusMessage = vm.currentStatusMessage
-    val isKeyboardVisible  = WindowInsets.isImeVisible
     val context            = LocalContext.current
 
     // Ctrl 键工具栏状态
@@ -305,13 +304,12 @@ fun TerminalScreen(
                     }
                 }
 
-                // B. Termius 风格工具栏（仅键盘弹出时显示）
-                if (isKeyboardVisible) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF1C2330))
-                    ) {
+                // B. Termius 风格工具栏（始终显示）
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1C2330))
+                ) {
                         // 主工具行
                         Row(
                             modifier = Modifier
@@ -397,7 +395,6 @@ fun TerminalScreen(
                                 }
                             }
                         }
-                    }
                 }
             }
         }
