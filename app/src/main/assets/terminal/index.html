@@ -222,10 +222,28 @@
       ro.observe(document.getElementById('terminal'));
     }
 
+    // ── Ctrl 工具栏状态（由 Kotlin 同步） ──────────────────────────
+    // 软键盘输入完全走 term.onData，不会经过工具栏的按键处理函数，
+    // 所以 Ctrl 开关必须在这里也生效一份，否则只能跟工具栏上的符号键组合
+    // （工具栏里根本没有 a-z 字母键，等于 Ctrl 永远用不上）。
+    var ctrlArmed = false;
+    window.setCtrlArmed = function(v) { ctrlArmed = !!v; };
+
     // ── User input → Kotlin ──────────────────────────────────────
     term.onData(function(data) {
       try {
-        var bytes = new TextEncoder().encode(data);
+        var toSend = data;
+        if (ctrlArmed && data.length === 1) {
+          var code = data.charCodeAt(0);
+          // Ctrl+<letter/symbol>: standard terminals map this by masking off
+          // the top bits — works for A-Z, a-z, @ [ \ ] ^ _ etc.
+          if (code >= 0x3F && code <= 0x7E) {
+            toSend = String.fromCharCode(code & 0x1F);
+          }
+          ctrlArmed = false;
+          try { Android.ctrlConsumed(); } catch(e) {}
+        }
+        var bytes = new TextEncoder().encode(toSend);
         var binary = '';
         bytes.forEach(function(b) { binary += String.fromCharCode(b); });
         Android.sendInput(btoa(binary));

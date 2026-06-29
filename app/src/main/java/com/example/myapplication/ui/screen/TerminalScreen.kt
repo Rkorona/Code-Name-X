@@ -48,7 +48,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 // ─────────────────────────────────────────────
 private class TerminalJsBridge(
     private val onInput: (ByteArray) -> Unit,
-    private val onResizeCallback: (Int, Int) -> Unit
+    private val onResizeCallback: (Int, Int) -> Unit,
+    private val onCtrlConsumed: () -> Unit
 ) {
     @JavascriptInterface
     fun sendInput(base64: String) {
@@ -58,6 +59,11 @@ private class TerminalJsBridge(
     @JavascriptInterface
     fun onResize(rows: Int, cols: Int) {
         onResizeCallback(rows, cols)
+    }
+
+    @JavascriptInterface
+    fun ctrlConsumed() {
+        onCtrlConsumed()
     }
 }
 
@@ -108,7 +114,14 @@ fun TerminalScreen(
     fun handleToolbarKeyPress(key: String) {
         val bytes: ByteArray = when (key) {
             "Esc"  -> byteArrayOf(0x1B)
-            "Ctrl" -> { isCtrlPressed = !isCtrlPressed; return }
+            "Ctrl" -> {
+                isCtrlPressed = !isCtrlPressed
+                // term.onData (real keyboard input) lives in JS and never goes through
+                // this function, so the toggle has to be pushed over the bridge too —
+                // otherwise Ctrl only ever combines with toolbar symbol buttons.
+                webViewRef.value?.evaluateJavascript("window.setCtrlArmed(${isCtrlPressed})", null)
+                return
+            }
             "Tab"  -> byteArrayOf(0x09)
             "↑"    -> byteArrayOf(0x1B, 0x5B, 0x41)
             "↓"    -> byteArrayOf(0x1B, 0x5B, 0x42)
@@ -131,6 +144,7 @@ fun TerminalScreen(
                 val raw = key.toByteArray(Charsets.UTF_8)
                 if (isCtrlPressed && raw.size == 1 && raw[0] in 0x40..0x7E) {
                     isCtrlPressed = false
+                    webViewRef.value?.evaluateJavascript("window.setCtrlArmed(false)", null)
                     byteArrayOf((raw[0].toInt() xor 0x40).toByte())
                 } else { raw }
             }
@@ -201,7 +215,8 @@ fun TerminalScreen(
                             addJavascriptInterface(
                                 TerminalJsBridge(
                                     onInput  = { data -> vm.sendInput(data) },
-                                    onResizeCallback = { rows, cols -> vm.resizePty(rows, cols) }
+                                    onResizeCallback = { rows, cols -> vm.resizePty(rows, cols) },
+                                    onCtrlConsumed = { isCtrlPressed = false }
                                 ),
                                 "Android"
                             )
