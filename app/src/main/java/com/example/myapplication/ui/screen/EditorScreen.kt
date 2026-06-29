@@ -193,11 +193,10 @@ fun EditorScreen(
         val wrap = settings.wordWrap
         val autocomplete = settings.autoComplete
 
-        // 注入或更新自定义样式块
+        // 注入或更新自定义样式块（字号、行号、自动补全）
         val css = buildString {
             append(".cm-content,.cm-gutters{font-size:${fs}px!important}")
             if (!showGutter) append(".cm-gutters{display:none!important}")
-            if (wrap) append(".cm-scroller{overflow-x:hidden!important}.cm-content{white-space:pre-wrap!important;word-break:break-all!important}")
             if (!autocomplete) append(".cm-tooltip{display:none!important}")
         }
         executeJs("""
@@ -207,6 +206,9 @@ fun EditorScreen(
               s.textContent=${'"'}${css}${'"'};
             })()
         """.trimIndent())
+
+        // 自动换行（通过 CodeMirror 扩展正确切换，避免 CSS hack 无法触发高度重算）
+        executeJs("if(window.editorAPI&&window.editorAPI.setLineWrapping)window.editorAPI.setLineWrapping($wrap)")
 
         // Tab 宽度
         executeJs("window.editorAPI.setIndentation('Space',$tabSz)")
