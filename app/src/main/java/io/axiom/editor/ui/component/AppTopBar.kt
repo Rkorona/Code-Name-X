@@ -1,5 +1,7 @@
 package io.axiom.editor.ui.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -33,6 +35,7 @@ import io.axiom.editor.ui.screen.ProjectSortOrder
  * @param onSearchActiveChange 搜索模式切换回调（仅 Tab 0 有效）
  * @param searchQuery 当前搜索关键词（仅 Tab 0 搜索模式有效）
  * @param onSearchQueryChange 搜索关键词变更回调（仅 Tab 0 搜索模式有效）
+ * @param isScrolled 页面是否已滚动（滚动后顶栏背景自动加深）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,11 +47,23 @@ fun AppTopBar(
     onSearchActiveChange: (Boolean) -> Unit = {},
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
+    isScrolled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val searchFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var sortMenuExpanded by remember { mutableStateOf(false) }
+
+    // 各 Tab 的基础背景色（未滚动时与页面背景一致）
+    val baseSurface = MaterialTheme.colorScheme.surface
+    val scrolledSurface = MaterialTheme.colorScheme.surfaceContainerHigh
+
+    // 滚动时背景加深，动画过渡
+    val barBgColor by animateColorAsState(
+        targetValue = if (isScrolled) scrolledSurface else baseSurface,
+        animationSpec = tween(durationMillis = 250),
+        label = "topBarBg"
+    )
 
     // 搜索栏激活时自动弹出键盘
     LaunchedEffect(isSearchActive) {
@@ -62,7 +77,7 @@ fun AppTopBar(
             if (isSearchActive) {
                 // ── 搜索模式：Termius 风格胶囊搜索栏 ──
                 Surface(
-                    color = MaterialTheme.colorScheme.surface,
+                    color = barBgColor,
                     modifier = modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -223,7 +238,7 @@ fun AppTopBar(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = barBgColor
                     ),
                     modifier = modifier
                 )
@@ -233,7 +248,7 @@ fun AppTopBar(
             TopAppBar(
                 title = { Text("GitHub Repositories", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = barBgColor
                 ),
                 modifier = modifier
             )
@@ -242,7 +257,7 @@ fun AppTopBar(
             TopAppBar(
                 title = { Text("设置", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = barBgColor
                 ),
                 modifier = modifier
             )

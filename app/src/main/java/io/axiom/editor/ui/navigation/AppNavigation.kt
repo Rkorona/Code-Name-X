@@ -134,7 +134,16 @@ fun AppNavigation(settingsViewModel: SettingsViewModel = viewModel()) {
                 onImportFile = { importFolderLauncher.launch(null) },
                 onFromTemplate = {},
                 onSettingsClick = {},
-                onTerminalClick = { currentScreen = Screen.Terminal }
+                onTerminalClick = { currentScreen = Screen.Terminal },
+                onEditProject = { project, newName ->
+                    scope.launch { repository.updateProjectName(project.id, newName) }
+                },
+                onDeleteProject = { project ->
+                    scope.launch { repository.deleteProject(project.id) }
+                },
+                onCopyProject = { project ->
+                    scope.launch { repository.copyProject(project) }
+                }
             )
         }
 

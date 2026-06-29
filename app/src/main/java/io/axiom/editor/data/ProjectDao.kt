@@ -22,4 +22,7 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET lastModified = :lastModified WHERE id = :id")
     suspend fun updateLastModified(id: String, lastModified: String)
+
+    @Query("UPDATE projects SET name = :newName WHERE id = :id")
+    suspend fun updateProjectName(id: String, newName: String)
 }

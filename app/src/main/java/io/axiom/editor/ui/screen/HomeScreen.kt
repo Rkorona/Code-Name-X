@@ -1,13 +1,29 @@
 package io.axiom.editor.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,13 +31,19 @@ import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -142,7 +164,10 @@ fun HomeScreen(
     onImportFile: () -> Unit = {},
     onFromTemplate: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    onTerminalClick: () -> Unit = {}
+    onTerminalClick: () -> Unit = {},
+    onEditProject: (Project, String) -> Unit = { _, _ -> },
+    onDeleteProject: (Project) -> Unit = {},
+    onCopyProject: (Project) -> Unit = {}
 ) {
     // ── 搜索状态 ──
     var isSearchActive by remember { mutableStateOf(false) }
@@ -153,6 +178,20 @@ fun HomeScreen(
 
     // ── AddProject sheet 状态 ──
     var showAddSheet by remember { mutableStateOf(false) }
+
+    // ── 长按选中状态 ──
+    var longPressedProjectId by remember { mutableStateOf<String?>(null) }
+
+    // ── 编辑对话框状态 ──
+    var editingProject by remember { mutableStateOf<Project?>(null) }
+
+    // ── 滚动状态（用于顶栏背景变化）──
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
 
     // ── 派生显示列表：过滤 + 排序 ──
     val displayedProjects = remember(projects, searchQuery, sortOrder) {
@@ -168,11 +207,11 @@ fun HomeScreen(
                 isSearchActive = isSearchActive,
                 onSearchActiveChange = { isSearchActive = it },
                 searchQuery = searchQuery,
-                onSearchQueryChange = { searchQuery = it }
+                onSearchQueryChange = { searchQuery = it },
+                isScrolled = isScrolled
             )
         },
         floatingActionButton = {
-            // 只在项目列表页 (Tab 0) 且键盘未弹起时显示创建项目的悬浮按钮
             if (selectedTab == 0) {
                 FloatingActionButton(
                     onClick = { showAddSheet = true },
@@ -198,7 +237,6 @@ fun HomeScreen(
             }
         }
     ) { innerPadding ->
-        // 根据选中的 Tab 决定页面主体的渲染内容
         when (selectedTab) {
             0 -> {
                 ProjectList(
@@ -206,8 +244,31 @@ fun HomeScreen(
                     searchQuery = searchQuery,
                     sortOrder = sortOrder,
                     isSearchActive = isSearchActive,
-                    onProjectClick = onProjectClick,
+                    onProjectClick = { project ->
+                        if (longPressedProjectId != null) {
+                            longPressedProjectId = null
+                        } else {
+                            onProjectClick(project)
+                        }
+                    },
                     onTerminalClick = onTerminalClick,
+                    longPressedProjectId = longPressedProjectId,
+                    onLongPress = { project -> longPressedProjectId = project.id },
+                    onCancelLongPress = { longPressedProjectId = null },
+                    onEditProject = { project -> editingProject = project },
+                    onDeleteProject = { project ->
+                        longPressedProjectId = null
+                        onDeleteProject(project)
+                    },
+                    onCopyProject = { project ->
+                        longPressedProjectId = null
+                        onCopyProject(project)
+                    },
+                    onNewProject = {
+                        longPressedProjectId = null
+                        showAddSheet = true
+                    },
+                    listState = listState,
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -247,6 +308,21 @@ fun HomeScreen(
         )
     }
 
+    // ── 编辑项目对话框 ─────────────────────────────────
+    if (editingProject != null) {
+        EditProjectDialog(
+            project = editingProject!!,
+            onConfirm = { newName ->
+                onEditProject(editingProject!!, newName)
+                editingProject = null
+                longPressedProjectId = null
+            },
+            onDismiss = {
+                editingProject = null
+            }
+        )
+    }
+
     // ── 文件树底部弹窗（点击项目后弹出） ─────────────────
     if (selectedProject != null) {
         FileExplorerSheet(
@@ -255,6 +331,87 @@ fun HomeScreen(
             onOpenFile = onOpenFile
         )
     }
+}
+
+// ─────────────────────────────────────────────
+// 编辑项目对话框
+// ─────────────────────────────────────────────
+@Composable
+fun EditProjectDialog(
+    project: Project,
+    onConfirm: (newName: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var projectName by remember { mutableStateOf(project.name) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                text = "重命名项目",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            OutlinedTextField(
+                value = projectName,
+                onValueChange = { input ->
+                    val sanitized = input.filter { ch ->
+                        ch != '/' && ch != '\\' && ch != ':' &&
+                        ch != '*' && ch != '?' && ch != '"'  &&
+                        ch != '<' && ch != '>'  && ch != '|'
+                    }
+                    projectName = sanitized
+                    errorMessage = null
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                label = { Text("项目名称") },
+                singleLine = true,
+                isError = errorMessage != null,
+                supportingText = if (errorMessage != null) {
+                    { Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error) }
+                } else null,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = {
+                    if (projectName.isNotBlank()) onConfirm(projectName.trim())
+                    else errorMessage = "项目名称不能为空"
+                }),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                )
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (projectName.isNotBlank()) onConfirm(projectName.trim())
+                    else errorMessage = "项目名称不能为空"
+                },
+                enabled = projectName.isNotBlank(),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, shape = RoundedCornerShape(10.dp)) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 // ─────────────────────────────────────────────
@@ -269,8 +426,17 @@ fun ProjectList(
     searchQuery: String = "",
     sortOrder: ProjectSortOrder = ProjectSortOrder.DEFAULT,
     isSearchActive: Boolean = false,
+    longPressedProjectId: String? = null,
+    onLongPress: (Project) -> Unit = {},
+    onCancelLongPress: () -> Unit = {},
+    onEditProject: (Project) -> Unit = {},
+    onDeleteProject: (Project) -> Unit = {},
+    onCopyProject: (Project) -> Unit = {},
+    onNewProject: () -> Unit = {},
+    listState: LazyListState = rememberLazyListState()
 ) {
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -363,9 +529,17 @@ fun ProjectList(
             }
         } else {
             items(projects, key = { it.id }) { project ->
+                val isLongPressed = longPressedProjectId == project.id
                 ProjectCard(
                     project = project,
-                    onClick = { onProjectClick(project) }
+                    isLongPressed = isLongPressed,
+                    onClick = { onProjectClick(project) },
+                    onLongPress = { onLongPress(project) },
+                    onCancelLongPress = onCancelLongPress,
+                    onEditClick = { onEditProject(project) },
+                    onDeleteClick = { onDeleteProject(project) },
+                    onCopyClick = { onCopyProject(project) },
+                    onNewClick = onNewProject
                 )
             }
         }
@@ -383,7 +557,6 @@ fun ProjectList(
         item {
             TerminalCard(onClick = onTerminalClick)
         }
-        // Bottom spacer so the FAB doesn't overlap the last card
         item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 }
@@ -395,7 +568,14 @@ fun ProjectList(
 fun ProjectCard(
     project: Project,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isLongPressed: Boolean = false,
+    onLongPress: () -> Unit = {},
+    onCancelLongPress: () -> Unit = {},
+    onEditClick: () -> Unit = {},
+    onDeleteClick: () -> Unit = {},
+    onCopyClick: () -> Unit = {},
+    onNewClick: () -> Unit = {}
 ) {
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -405,44 +585,202 @@ fun ProjectCard(
         }
     }
 
-    Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Row(
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // ── 长按操作栏（编辑 + 菜单）──
+        AnimatedVisibility(
+            visible = isLongPressed,
+            enter = expandVertically(
+                expandFrom = Alignment.Bottom,
+                animationSpec = tween(200)
+            ) + fadeIn(animationSpec = tween(150)),
+            exit = shrinkVertically(
+                shrinkTowards = Alignment.Bottom,
+                animationSpec = tween(180)
+            ) + fadeOut(animationSpec = tween(120))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 编辑按钮
+                Surface(
+                    onClick = onEditClick,
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.shadow(2.dp, RoundedCornerShape(10.dp))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "编辑",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "编辑",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // 菜单按钮（含下拉菜单）
+                Box {
+                    Surface(
+                        onClick = { menuExpanded = true },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.shadow(2.dp, RoundedCornerShape(10.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "更多",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "菜单",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        shape = RoundedCornerShape(14.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 6.dp
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("全新", fontWeight = FontWeight.Medium) },
+                            onClick = {
+                                menuExpanded = false
+                                onNewClick()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.NoteAdd,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("复制", fontWeight = FontWeight.Medium) },
+                            onClick = {
+                                menuExpanded = false
+                                onCopyClick()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+                        DropdownMenuItem(
+                            text = { Text("删除", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) },
+                            onClick = {
+                                menuExpanded = false
+                                onDeleteClick()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── 卡片本体 ──
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LanguageIcon(language = project.language)
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = project.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+                .pointerInput(isLongPressed) {
+                    detectTapGestures(
+                        onTap = {
+                            if (isLongPressed) onCancelLongPress() else onClick()
+                        },
+                        onLongPress = {
+                            if (!isLongPressed) onLongPress()
+                        }
                     )
-                    InlineTypeBadge(type = project.type)
+                },
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isLongPressed)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                else
+                    MaterialTheme.colorScheme.surfaceContainerLow
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LanguageIcon(language = project.language)
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = project.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        InlineTypeBadge(type = project.type)
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = formatRelativeTime(project.lastModified, tickMs),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
                 }
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = formatRelativeTime(project.lastModified, tickMs),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
             }
         }
     }

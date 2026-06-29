@@ -31,6 +31,19 @@ class ProjectRepository(context: Context) {
         dao.updateLastModified(id, System.currentTimeMillis().toString())
     }
 
+    suspend fun updateProjectName(id: String, newName: String) {
+        dao.updateProjectName(id, newName)
+    }
+
+    suspend fun copyProject(project: Project) {
+        val copy = project.copy(
+            id = System.currentTimeMillis().toString(),
+            name = "${project.name} 副本",
+            lastModified = System.currentTimeMillis()
+        )
+        dao.insertProject(copy.toEntity())
+    }
+
     private fun ProjectEntity.toProject(): Project = Project(
         id = id,
         name = name,
