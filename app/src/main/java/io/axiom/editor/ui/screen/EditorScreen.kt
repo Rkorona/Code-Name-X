@@ -898,7 +898,14 @@ private fun EditorTabStrip(
         ) {
             tabFilePaths.forEachIndexed { index, path ->
                 val isActive = index == activeTabIndex
-                val tabName = path.substringAfterLast('/').substringAfterLast(':').ifBlank { "untitled" }
+                val isSafPath = path.startsWith("content://")
+                val tabName = if (isSafPath) {
+                    Uri.decode(Uri.parse(path).lastPathSegment ?: "")
+                        .substringAfterLast('/')
+                        .ifBlank { "untitled" }
+                } else {
+                    path.substringAfterLast('/').ifBlank { "untitled" }
+                }
                 val tabBg = if (isActive) activeTabBg else tabBarBg
                 val textColor = if (isActive) MaterialTheme.colorScheme.onSurface
                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
