@@ -319,14 +319,9 @@ fun HomeScreen(
                 )
             }
             1 -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("GitHub 克隆管理页面（预留）", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                GitHubScreen(
+                    modifier = Modifier.padding(innerPadding)
+                )
             }
             3 -> {
                 if (settingsViewModel != null) {

@@ -57,3 +57,21 @@ val DarkSurfaceContainerHigh = Color(0xFF252934)
 val DarkOutline = Color(0xFF585D6A)
 val DarkError = Color(0xFFFFB4AB)
 val DarkOnError = Color(0xFF690005)
+
+// ---------- GitHub screen fixed palette ----------
+object AxiomColors {
+    val Background = Color(0xFF0F111A)
+    val CardBackground = Color(0xFF1A1D30)
+    val InputBackground = Color(0xFF252942)
+    val TextPrimary = Color(0xFFFFFFFF)
+    val TextSecondary = Color(0xFF7C82A6)
+    val AccentBlue = Color(0xFF2160C4)
+    val AccentBlueLight = Color(0xFF4C8BF5)
+    val AccentRed = Color(0xFFCF6679)
+    val AccentGreen = Color(0xFF107C41)
+    val TextMuted = Color(0xFF4A517A)
+    val TextMutedLight = Color(0xFFA0A5C4)
+    val AccentBlueAlpha = Color(0x4D2160C4)
+    val AccentRedAlpha = Color(0x26EF5350)
+    val AccentBlueAlpha2 = Color(0x264C8BF5)
+}
