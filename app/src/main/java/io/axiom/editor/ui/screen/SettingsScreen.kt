@@ -24,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.axiom.editor.data.*
-import io.axiom.editor.ui.component.AppTopBar
 
 // ─────────────────────────────────────────────────────────────────
 // 固定强调色（主题无关，仅用于图标背景）
@@ -50,17 +49,10 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     modifier: Modifier = Modifier
 ) {
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            AppTopBar(selectedTab = 3)
-        }
-    ) { innerPadding ->
-        SettingsContent(
-            viewModel = viewModel,
-            modifier = Modifier.padding(innerPadding)
-        )
-    }
+    SettingsContent(
+        viewModel = viewModel,
+        modifier = modifier
+    )
 }
 
 @Composable
