@@ -131,6 +131,27 @@ object GitHubOAuthService {
         }
     }
 
+    /**
+     * 用 GitHub Compare API 查询远端比本地多几个提交（ahead_by）。
+     * 若 SHA 相同或请求失败返回 0。
+     */
+    fun getCommitsAheadCount(
+        token: String,
+        fullName: String,
+        localSha: String,
+        remoteSha: String
+    ): Int {
+        if (localSha == remoteSha || localSha.isEmpty()) return 0
+        val conn = apiGet(
+            token,
+            "https://api.github.com/repos/$fullName/compare/$localSha...$remoteSha"
+        )
+        if (conn.responseCode != 200) return 0
+        return try {
+            JSONObject(conn.inputStream.bufferedReader().readText()).optInt("ahead_by", 0)
+        } catch (_: Exception) { 0 }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // 提交历史（远端）
     // ═══════════════════════════════════════════════════════════════════

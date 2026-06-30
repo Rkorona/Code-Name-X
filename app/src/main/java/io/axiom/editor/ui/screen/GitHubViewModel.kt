@@ -321,30 +321,52 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * 静默刷新各仓库的远端引用（IO 线程），更新 isRemoteAhead 状态。
+     * 静默刷新各仓库的远端引用（IO 线程），更新 isRemoteAhead + commitsAhead 状态。
      */
     private suspend fun silentRefreshRemoteRefs(repos: List<LocalRepo>) {
         val token = accessToken
         if (token.isEmpty()) return
         var anyChanged = false
+        val aheadCounts = mutableMapOf<String, Int>()
+
         for (repo in repos) {
             try {
                 val dir      = findProjectDir(repo.name) ?: continue
-                val fullName = readRemoteFullName(dir)  ?: continue
+                val fullName = readRemoteFullName(dir)   ?: continue
                 val branch   = repo.branch
-                val sha      = GitHubOAuthService.getLatestCommitSha(token, fullName, branch)
-                val refFile  = File(dir, ".git/refs/remotes/origin/$branch")
-                val current  = if (refFile.exists()) refFile.readText().trim() else ""
-                if (sha != current) {
+
+                // ① 拉取最新远端 SHA 并写入 refs/remotes/origin/<branch>
+                val remoteSha = GitHubOAuthService.getLatestCommitSha(token, fullName, branch)
+                val refFile   = File(dir, ".git/refs/remotes/origin/$branch")
+                val stored    = if (refFile.exists()) refFile.readText().trim() else ""
+                if (remoteSha != stored) {
                     refFile.parentFile?.mkdirs()
-                    refFile.writeText("$sha\n")
+                    refFile.writeText("$remoteSha\n")
                     anyChanged = true
+                }
+
+                // ② 如果远端 SHA ≠ 本地 HEAD SHA，查 Compare API 得到确切的落后提交数
+                val localSha = File(dir, ".git/refs/heads/$branch")
+                    .let { if (it.exists()) it.readText().trim() else "" }
+                if (localSha.isNotEmpty() && remoteSha != localSha) {
+                    val ahead = GitHubOAuthService.getCommitsAheadCount(
+                        token, fullName, localSha, remoteSha
+                    )
+                    if (ahead > 0) {
+                        aheadCounts[repo.name] = ahead
+                        anyChanged = true
+                    }
                 }
             } catch (_: Exception) { /* 网络不可用时忽略 */ }
         }
+
         if (anyChanged) {
             val scanned = GitHubRepoScanner.scan(getApplication())
-            withContext(Dispatchers.Main) { localRepos = scanned }
+            // 将 Compare API 查到的落后提交数合并进扫描结果
+            val merged = scanned.map { r ->
+                r.copy(commitsAhead = aheadCounts[r.name] ?: r.commitsAhead)
+            }
+            withContext(Dispatchers.Main) { localRepos = merged }
         }
     }
 

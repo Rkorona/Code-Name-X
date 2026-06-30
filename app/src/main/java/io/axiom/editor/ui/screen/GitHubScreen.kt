@@ -500,7 +500,15 @@ private fun LocalRepoCard(
                                     textColor       = colors.accentRed
                                 )
                             }
-                            if (repo.isRemoteAhead) {
+                            if (repo.commitsAhead > 0) {
+                                // Compare API 返回了确切数量 → 显示精确的待拉取数
+                                StatusBadge(
+                                    text            = "${repo.commitsAhead} 个待拉取",
+                                    backgroundColor = colors.accentBlueAlpha2,
+                                    textColor       = colors.accentBlueLight
+                                )
+                            } else if (repo.isRemoteAhead) {
+                                // 还没查到确切数量时，显示通用提示
                                 StatusBadge(
                                     text            = "远端有更新",
                                     backgroundColor = colors.accentBlueAlpha2,

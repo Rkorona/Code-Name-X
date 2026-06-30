@@ -5,7 +5,9 @@ data class LocalRepo(
     val branch: String,
     val uncommittedChanges: Int = 0,
     val unpushedCommits: Int = 0,
-    val isRemoteAhead: Boolean = false
+    val isRemoteAhead: Boolean = false,
+    /** 远端比本地多的提交数（0 = 未知 / 未查询） */
+    val commitsAhead: Int = 0
 )
 
 data class RemoteRepo(
