@@ -30,6 +30,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 enum class GitHubLoginState { Idle, Loading, Error }
 
@@ -123,6 +126,10 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
             val scanned = GitHubRepoScanner.scan(getApplication())
             withContext(Dispatchers.Main) { localRepos = scanned }
             refreshAllChangedFiles(scanned)
+            // 启动后静默检查各仓库远端 SHA，更新 isRemoteAhead 状态
+            if (isLoggedIn && accessToken.isNotEmpty()) {
+                silentRefreshRemoteRefs(scanned)
+            }
         }
 
         if (isLoggedIn && accessToken.isNotEmpty()) {
@@ -277,6 +284,50 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * 应用启动后静默刷新各仓库的远端引用（不弹提示），
+     * 让 isRemoteAhead 在不手动 Fetch 的情况下也能正确显示。
+     */
+    private suspend fun silentRefreshRemoteRefs(repos: List<LocalRepo>) {
+        val token = accessToken
+        if (token.isEmpty()) return
+        var anyChanged = false
+        for (repo in repos) {
+            try {
+                val dir      = findProjectDir(repo.name) ?: continue
+                val fullName = readRemoteFullName(dir)  ?: continue
+                val branch   = repo.branch
+                val sha      = GitHubOAuthService.getLatestCommitSha(token, fullName, branch)
+                val refFile  = File(dir, ".git/refs/remotes/origin/$branch")
+                val current  = if (refFile.exists()) refFile.readText().trim() else ""
+                if (sha != current) {
+                    refFile.parentFile?.mkdirs()
+                    refFile.writeText("$sha\n")
+                    anyChanged = true
+                }
+            } catch (_: Exception) { /* 网络不可用时忽略 */ }
+        }
+        if (anyChanged) {
+            val scanned = GitHubRepoScanner.scan(getApplication())
+            withContext(Dispatchers.Main) { localRepos = scanned }
+        }
+    }
+
+    /** 将 GitHub API 返回的远端提交列表转换为 AXIOM_COMMITS 的行格式（oldest-first, all pushed）。*/
+    private fun remoteCommitsToRawLines(
+        commits: List<GitHubOAuthService.RemoteCommitInfo>
+    ): List<String> {
+        val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).also {
+            it.timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return commits.reversed().map { c ->
+            val ts  = try { isoFmt.parse(c.authorDate)?.time ?: System.currentTimeMillis() }
+                      catch (_: Exception) { System.currentTimeMillis() }
+            val msg = c.message.replace("\t", " ").replace("\n", "↵")
+            "${c.sha}\t$ts\tpushed\t${c.authorName}\t$msg"
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Fetch
     // ═══════════════════════════════════════════════════════════════════
@@ -377,6 +428,18 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         // 重置两侧快照（干净基线）
                         GitHubFileChangeScanner.writeIndex(dir)
+
+                        // 拉取远端最近提交历史并写入 AXIOM_COMMITS
+                        try {
+                            val remoteCommits = GitHubOAuthService.getRecentCommits(
+                                token, fullName, branch, perPage = 30
+                            )
+                            if (remoteCommits.isNotEmpty()) {
+                                GitHubFileChangeScanner.writeRawCommitLines(
+                                    dir, remoteCommitsToRawLines(remoteCommits)
+                                )
+                            }
+                        } catch (_: Exception) { /* 历史拉取失败不影响主流程 */ }
                     } finally {
                         tempDir.deleteRecursively()
                     }
@@ -385,8 +448,12 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
                 val scanned = withContext(Dispatchers.IO) { GitHubRepoScanner.scan(getApplication()) }
                 localRepos  = scanned
                 changedFiles = changedFiles + (repoName to emptyList())
-                // Pull 后不删除提交历史，让 loadCommitHistoryForRepo 异步替换
-                loadCommitHistoryForRepo(repoName)
+                // 直接读取已写好的提交历史（同步更新，不再走异步覆盖逻辑）
+                val history = withContext(Dispatchers.IO) {
+                    val dir = findProjectDir(repoName)
+                    if (dir != null) GitHubFileChangeScanner.readCommits(dir) else emptyList()
+                }
+                commitHistory = commitHistory + (repoName to history)
                 setRepoMsg(repoName, "Pull 完成，代码已更新到最新版本", false)
             } catch (e: Exception) {
                 setRepoMsg(repoName, "Pull 失败：${e.message ?: "网络错误"}", true)
@@ -583,6 +650,17 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.IO) {
                     setupGitDir(destDir, repo, branch, sha)
                     GitHubFileChangeScanner.writeIndex(destDir)
+                    // 拉取远端提交历史写入 AXIOM_COMMITS
+                    try {
+                        val remoteCommits = GitHubOAuthService.getRecentCommits(
+                            token, repo.fullName, branch, perPage = 30
+                        )
+                        if (remoteCommits.isNotEmpty()) {
+                            GitHubFileChangeScanner.writeRawCommitLines(
+                                destDir, remoteCommitsToRawLines(remoteCommits)
+                            )
+                        }
+                    } catch (_: Exception) { }
                 }
 
                 ProjectRepository(context).addProject(
@@ -623,15 +701,15 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
         File(gitDir, "HEAD").writeText("ref: refs/heads/$branch\n")
         File(gitDir, "config").writeText("""
 [core]
-	repositoryformatversion = 0
-	filemode = false
-	bare = false
+        repositoryformatversion = 0
+        filemode = false
+        bare = false
 [remote "origin"]
-	url = https://github.com/${repo.fullName}.git
-	fetch = +refs/heads/*:refs/remotes/origin/*
+        url = https://github.com/${repo.fullName}.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
 [branch "$branch"]
-	remote = origin
-	merge = refs/heads/$branch
+        remote = origin
+        merge = refs/heads/$branch
 """.trimIndent())
         if (sha.length == 40) {
             File(gitDir, "refs/heads").mkdirs()

@@ -195,6 +195,18 @@ object GitHubFileChangeScanner {
             }
     }
 
+    /**
+     * Pull / Clone 后：将远端提交历史覆盖写入 AXIOM_COMMITS。
+     * 每条格式：sha\ttimestampMs\tpushed\tauthor\tmessage
+     * rawLines 中的每个元素已按此格式组装好，顺序为 oldest-first。
+     */
+    fun writeRawCommitLines(projectDir: File, rawLines: List<String>) {
+        val gitDir = File(projectDir, ".git")
+        if (!gitDir.exists()) return
+        val content = rawLines.filter { it.isNotBlank() }.joinToString("\n")
+        File(gitDir, COMMITS_FILE).writeText(if (content.isNotEmpty()) "$content\n" else "")
+    }
+
     fun hasPendingCommits(projectDir: File): Boolean {
         val file = File(projectDir, ".git/$COMMITS_FILE")
         if (!file.exists()) return false
