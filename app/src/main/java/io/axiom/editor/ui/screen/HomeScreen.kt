@@ -59,7 +59,6 @@ import io.axiom.editor.ui.component.AppTopBar
 import io.axiom.editor.ui.model.Project
 import io.axiom.editor.ui.model.ProjectLanguage
 import io.axiom.editor.ui.model.ProjectType
-import io.axiom.editor.ui.theme.AxiomColors
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin

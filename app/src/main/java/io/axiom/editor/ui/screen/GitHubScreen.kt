@@ -4,7 +4,6 @@ package io.axiom.editor.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -43,20 +42,19 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
@@ -69,7 +67,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.axiom.editor.ui.model.LocalRepo
 import io.axiom.editor.ui.model.RemoteRepo
-import io.axiom.editor.ui.theme.AxiomColors
+import io.axiom.editor.ui.theme.LocalGitHubColors
+import io.axiom.editor.ui.theme.gitHubColors
 
 // ═══════════════════════════════════════════════════════════════════
 // 主体页面
@@ -84,75 +83,79 @@ fun GitHubScreen(
     showLoginSheet: Boolean = false,
     onLoginSheetDismiss: () -> Unit = {}
 ) {
-    val expandedRepoName = viewModel.expandedRepoName
-    val localRepos = viewModel.localRepos
-    val remoteRepos = viewModel.remoteRepos
-    val searchQuery = viewModel.searchQuery
+    CompositionLocalProvider(LocalGitHubColors provides gitHubColors()) {
+        val colors = LocalGitHubColors.current
 
-    val sheetState = rememberModalBottomSheetState()
+        val expandedRepoName = viewModel.expandedRepoName
+        val localRepos = viewModel.localRepos
+        val remoteRepos = viewModel.remoteRepos
+        val searchQuery = viewModel.searchQuery
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(AxiomColors.Background)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        val sheetState = rememberModalBottomSheetState()
 
-            val filteredRepos = if (searchQuery.isBlank()) {
-                remoteRepos
-            } else {
-                remoteRepos.filter {
-                    it.name.contains(searchQuery, ignoreCase = true) ||
-                        it.language.contains(searchQuery, ignoreCase = true)
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(colors.background)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                val filteredRepos = if (searchQuery.isBlank()) {
+                    remoteRepos
+                } else {
+                    remoteRepos.filter {
+                        it.name.contains(searchQuery, ignoreCase = true) ||
+                            it.language.contains(searchQuery, ignoreCase = true)
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    item { SectionTitle("本地仓库状态 (Local)") }
+
+                    items(localRepos, key = { it.name }) { repo ->
+                        LocalRepoCard(
+                            repo = repo,
+                            isExpanded = expandedRepoName == repo.name,
+                            onToggle = { viewModel.toggleRepoExpansion(repo.name) },
+                            modifier = Modifier.animateItem()
+                        )
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SectionTitle("云端仓库 (Remote)")
+                    }
+
+                    item {
+                        RemoteSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { viewModel.updateSearchQuery(it) }
+                        )
+                    }
+
+                    items(filteredRepos, key = { it.name }) { repo ->
+                        RemoteRepoCard(repo = repo, modifier = Modifier.animateItem())
+                    }
+
+                    item { Spacer(modifier = Modifier.height(32.dp)) }
                 }
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                state = listState,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
-            ) {
-                item { SectionTitle("本地仓库状态 (Local)") }
-
-                items(localRepos, key = { it.name }) { repo ->
-                    LocalRepoCard(
-                        repo = repo,
-                        isExpanded = expandedRepoName == repo.name,
-                        onToggle = { viewModel.toggleRepoExpansion(repo.name) },
-                        modifier = Modifier.animateItem()
-                    )
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    SectionTitle("云端仓库 (Remote)")
-                }
-
-                item {
-                    RemoteSearchBar(
-                        query = searchQuery,
-                        onQueryChange = { viewModel.updateSearchQuery(it) }
-                    )
-                }
-
-                items(filteredRepos, key = { it.name }) { repo ->
-                    RemoteRepoCard(repo = repo, modifier = Modifier.animateItem())
-                }
-
-                item { Spacer(modifier = Modifier.height(32.dp)) }
+            if (showLoginSheet) {
+                LoginBottomSheet(
+                    sheetState = sheetState,
+                    onDismiss = onLoginSheetDismiss,
+                    onLogin = { username, token ->
+                        viewModel.login(username, token)
+                        onLoginSheetDismiss()
+                    }
+                )
             }
-        }
-
-        if (showLoginSheet) {
-            LoginBottomSheet(
-                sheetState = sheetState,
-                onDismiss = onLoginSheetDismiss,
-                onLogin = { username, token ->
-                    viewModel.login(username, token)
-                    onLoginSheetDismiss()
-                }
-            )
         }
     }
 }
@@ -163,11 +166,12 @@ fun GitHubScreen(
 
 @Composable
 private fun SectionTitle(title: String) {
+    val colors = LocalGitHubColors.current
     Text(
         text = title,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
-        color = AxiomColors.TextMuted,
+        color = colors.textMuted,
         letterSpacing = 1.sp,
         modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
     )
@@ -184,10 +188,7 @@ private fun LocalRepoCard(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val borderAlpha by animateFloatAsState(
-        targetValue = if (isExpanded) 1f else 0f,
-        label = "borderAnimation"
-    )
+    val colors = LocalGitHubColors.current
 
     Card(
         modifier = modifier
@@ -195,12 +196,12 @@ private fun LocalRepoCard(
             .padding(vertical = 5.dp)
             .then(
                 if (isExpanded)
-                    Modifier.border(1.dp, AxiomColors.AccentBlueAlpha, RoundedCornerShape(16.dp))
+                    Modifier.border(1.dp, colors.expandedBorder, RoundedCornerShape(16.dp))
                 else Modifier
             ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isExpanded) Color(0xFF1D213A) else AxiomColors.CardBackground
+            containerColor = if (isExpanded) colors.cardExpanded else colors.card
         )
     ) {
         Column {
@@ -220,21 +221,21 @@ private fun LocalRepoCard(
                             text = repo.name,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = AxiomColors.TextPrimary
+                            color = colors.textPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Rounded.CallSplit,
                                 contentDescription = null,
-                                tint = AxiomColors.AccentBlue,
+                                tint = colors.accentBlue,
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = repo.branch,
                                 fontSize = 12.sp,
-                                color = AxiomColors.TextSecondary
+                                color = colors.textSecondary
                             )
                         }
                     }
@@ -246,15 +247,15 @@ private fun LocalRepoCard(
                         if (repo.uncommittedChanges > 0) {
                             StatusBadge(
                                 text = "${repo.uncommittedChanges} 个修改",
-                                backgroundColor = AxiomColors.AccentRedAlpha,
-                                textColor = Color(0xFFEE5253)
+                                backgroundColor = colors.accentRedAlpha,
+                                textColor = colors.accentRed
                             )
                         }
                         if (repo.unpushedCommits > 0) {
                             StatusBadge(
                                 text = "${repo.unpushedCommits} 个待推送",
-                                backgroundColor = AxiomColors.AccentBlueAlpha2,
-                                textColor = AxiomColors.AccentBlueLight
+                                backgroundColor = colors.accentBlueAlpha2,
+                                textColor = colors.accentBlueLight
                             )
                         }
                     }
@@ -282,8 +283,8 @@ private fun LocalRepoCard(
 @Composable
 private fun StatusBadge(
     text: String,
-    backgroundColor: Color,
-    textColor: Color
+    backgroundColor: androidx.compose.ui.graphics.Color,
+    textColor: androidx.compose.ui.graphics.Color
 ) {
     Text(
         text = text,
@@ -331,11 +332,12 @@ private fun RemoteActionButton(
     label: String,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGitHubColors.current
     Button(
         onClick = {},
         modifier = modifier.height(56.dp),
         shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = AxiomColors.InputBackground),
+        colors = ButtonDefaults.buttonColors(containerColor = colors.actionBtn),
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
         Column(
@@ -345,33 +347,34 @@ private fun RemoteActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = AxiomColors.AccentBlueLight,
+                tint = colors.accentBlueLight,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(text = label, fontSize = 12.sp, color = AxiomColors.TextPrimary)
+            Text(text = label, fontSize = 12.sp, color = colors.textPrimary)
         }
     }
 }
 
 @Composable
 private fun CommitBox() {
+    val colors = LocalGitHubColors.current
     var commitMessage by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+            .background(colors.commitWrap, RoundedCornerShape(10.dp))
             .padding(8.dp)
     ) {
         BasicTextField(
             value = commitMessage,
             onValueChange = { commitMessage = it },
-            textStyle = TextStyle(fontSize = 13.sp, color = AxiomColors.TextPrimary),
-            cursorBrush = SolidColor(AxiomColors.AccentBlue),
+            textStyle = TextStyle(fontSize = 13.sp, color = colors.textPrimary),
+            cursorBrush = SolidColor(colors.accentBlue),
             modifier = Modifier
                 .fillMaxWidth()
-                .background(AxiomColors.InputBackground, RoundedCornerShape(6.dp))
+                .background(colors.input, RoundedCornerShape(6.dp))
                 .padding(8.dp),
             decorationBox = { innerTextField ->
                 Box {
@@ -379,7 +382,7 @@ private fun CommitBox() {
                         Text(
                             text = "输入提交信息 (Commit message)...",
                             fontSize = 13.sp,
-                            color = Color(0xFF52587A)
+                            color = colors.placeholder
                         )
                     }
                     innerTextField()
@@ -394,12 +397,12 @@ private fun CommitBox() {
             horizontalArrangement = Arrangement.End
         ) {
             TextButton(onClick = { commitMessage = "" }) {
-                Text(text = "还原", color = AxiomColors.AccentRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "还原", color = colors.accentRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = {},
-                colors = ButtonDefaults.buttonColors(containerColor = AxiomColors.AccentBlue),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
@@ -418,30 +421,31 @@ private fun RemoteSearchBar(
     query: String,
     onQueryChange: (String) -> Unit
 ) {
+    val colors = LocalGitHubColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(AxiomColors.CardBackground, RoundedCornerShape(28.dp))
+            .background(colors.card, RoundedCornerShape(28.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Rounded.Search,
             contentDescription = "搜索",
-            tint = AxiomColors.TextSecondary,
+            tint = colors.textSecondary,
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(10.dp))
         BasicTextField(
             value = query,
             onValueChange = onQueryChange,
-            textStyle = TextStyle(fontSize = 15.sp, color = AxiomColors.TextPrimary),
-            cursorBrush = SolidColor(AxiomColors.AccentBlue),
+            textStyle = TextStyle(fontSize = 15.sp, color = colors.textPrimary),
+            cursorBrush = SolidColor(colors.accentBlue),
             modifier = Modifier.fillMaxWidth(),
             decorationBox = { innerTextField ->
                 Box {
                     if (query.isEmpty()) {
-                        Text(text = "搜索云端仓库...", fontSize = 15.sp, color = AxiomColors.TextSecondary)
+                        Text(text = "搜索云端仓库...", fontSize = 15.sp, color = colors.textSecondary)
                     }
                     innerTextField()
                 }
@@ -459,12 +463,13 @@ private fun RemoteRepoCard(
     repo: RemoteRepo,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGitHubColors.current
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = AxiomColors.CardBackground)
+        colors = CardDefaults.cardColors(containerColor = colors.card)
     ) {
         Row(
             modifier = Modifier
@@ -478,24 +483,24 @@ private fun RemoteRepoCard(
                     text = repo.name,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = AxiomColors.TextPrimary,
+                    color = colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(text = "★ ${formatStars(repo.stars)}", fontSize = 12.sp, color = AxiomColors.TextSecondary)
-                    Text(text = repo.language, fontSize = 12.sp, color = AxiomColors.TextSecondary)
+                    Text(text = "★ ${formatStars(repo.stars)}", fontSize = 12.sp, color = colors.textSecondary)
+                    Text(text = repo.language, fontSize = 12.sp, color = colors.textSecondary)
                 }
             }
 
             Button(
                 onClick = {},
                 shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AxiomColors.AccentBlueAlpha2),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlueAlpha2),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Text(text = "克隆", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AxiomColors.AccentBlueLight)
+                Text(text = "克隆", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.accentBlueLight)
             }
         }
     }
@@ -515,13 +520,14 @@ private fun LoginBottomSheet(
     onDismiss: () -> Unit,
     onLogin: (username: String, token: String) -> Unit
 ) {
+    val colors = LocalGitHubColors.current
     var username by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = AxiomColors.CardBackground,
+        containerColor = colors.card,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = {
             Box(
@@ -529,7 +535,7 @@ private fun LoginBottomSheet(
                     .padding(vertical = 12.dp)
                     .width(40.dp)
                     .height(4.dp)
-                    .background(AxiomColors.TextMuted, RoundedCornerShape(2.dp))
+                    .background(colors.textMuted, RoundedCornerShape(2.dp))
             )
         }
     ) {
@@ -539,18 +545,18 @@ private fun LoginBottomSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
-            Text(text = "验证 GitHub 账号", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = AxiomColors.TextPrimary)
+            Text(text = "验证 GitHub 账号", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
             Spacer(modifier = Modifier.height(6.dp))
-            Text(text = "请输入您的 Personal Access Token (PAT) 以便同步仓库", fontSize = 13.sp, color = AxiomColors.TextSecondary)
+            Text(text = "请输入您的 Personal Access Token (PAT) 以便同步仓库", fontSize = 13.sp, color = colors.textSecondary)
             Spacer(modifier = Modifier.height(20.dp))
 
-            Text(text = "GitHub 用户名", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AxiomColors.TextMutedLight)
+            Text(text = "GitHub 用户名", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = colors.textMutedLight)
             Spacer(modifier = Modifier.height(8.dp))
             LoginTextField(value = username, onValueChange = { username = it }, placeholder = "例如: YangHuaYong", isPassword = false)
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(text = "个人访问令牌 (Token)", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = AxiomColors.TextMutedLight)
+            Text(text = "个人访问令牌 (Token)", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = colors.textMutedLight)
             Spacer(modifier = Modifier.height(8.dp))
             LoginTextField(value = token, onValueChange = { token = it }, placeholder = "ghp_********************************", isPassword = true)
 
@@ -561,13 +567,13 @@ private fun LoginBottomSheet(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text(text = "取消", color = AxiomColors.TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(text = "取消", color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Button(
                     onClick = { onLogin(username, token) },
                     shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AxiomColors.AccentBlue),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlue),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                 ) {
                     Text(text = "验证并登录", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -584,21 +590,22 @@ private fun LoginTextField(
     placeholder: String,
     isPassword: Boolean
 ) {
+    val colors = LocalGitHubColors.current
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        textStyle = TextStyle(fontSize = 14.sp, color = AxiomColors.TextPrimary),
-        cursorBrush = SolidColor(AxiomColors.AccentBlue),
+        textStyle = TextStyle(fontSize = 14.sp, color = colors.textPrimary),
+        cursorBrush = SolidColor(colors.accentBlue),
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
         modifier = Modifier
             .fillMaxWidth()
-            .background(AxiomColors.InputBackground, RoundedCornerShape(8.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+            .background(colors.input, RoundedCornerShape(8.dp))
+            .border(1.dp, colors.loginBorder, RoundedCornerShape(8.dp))
             .padding(12.dp),
         decorationBox = { innerTextField ->
             Box {
                 if (value.isEmpty()) {
-                    Text(text = placeholder, fontSize = 14.sp, color = AxiomColors.TextSecondary)
+                    Text(text = placeholder, fontSize = 14.sp, color = colors.textSecondary)
                 }
                 innerTextField()
             }
