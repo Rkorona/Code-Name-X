@@ -378,10 +378,13 @@ fun TerminalScreen(
                 }
 
                 // B. M3 风格工具栏（始终显示）
+                val toolbarBg = MaterialTheme.colorScheme.surfaceContainerHigh
+                val toolbarDivider = MaterialTheme.colorScheme.outlineVariant
+                val toolbarAccent = MaterialTheme.colorScheme.primary
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .background(toolbarBg)
                 ) {
                         // 主工具行
                         Row(
@@ -390,7 +393,7 @@ fun TerminalScreen(
                                 .height(48.dp)
                                 .drawBehind {
                                     drawLine(
-                                        color = MaterialTheme.colorScheme.outlineVariant,
+                                        color = toolbarDivider,
                                         start = Offset(0f, 0f),
                                         end = Offset(size.width, 0f),
                                         strokeWidth = 1.dp.toPx()
@@ -403,7 +406,7 @@ fun TerminalScreen(
                             TerminalKeyButton(
                                 text = "Ctrl",
                                 isActive = isCtrlPressed,
-                                accentColor = MaterialTheme.colorScheme.primary
+                                accentColor = toolbarAccent
                             ) { handleToolbarKeyPress("Ctrl") }
                             TerminalKeyDivider()
                             TerminalKeyButton(icon = Icons.Default.KeyboardArrowUp) { handleToolbarKeyPress("↑") }
@@ -417,19 +420,20 @@ fun TerminalScreen(
                             TerminalKeyButton(
                                 icon = Icons.Default.MoreHoriz,
                                 isActive = showSecondaryPanel,
-                                accentColor = MaterialTheme.colorScheme.primary
+                                accentColor = toolbarAccent
                             ) { showSecondaryPanel = !showSecondaryPanel }
                         }
 
                         // 次级符号面板
                         if (showSecondaryPanel) {
+                            val panelBg = MaterialTheme.colorScheme.surface
                             FlowRow(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surface)
+                                    .background(panelBg)
                                     .drawBehind {
                                         drawLine(
-                                            color = MaterialTheme.colorScheme.outlineVariant,
+                                            color = toolbarDivider,
                                             start = Offset(0f, 0f),
                                             end = Offset(size.width, 0f),
                                             strokeWidth = 1.dp.toPx()
@@ -442,6 +446,7 @@ fun TerminalScreen(
                                     "|", "/", "\\", "_", "-", "&", "$",
                                     "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"
                                 )
+                                val symbolColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 symbols.forEach { sym ->
                                     Box(
                                         modifier = Modifier
@@ -457,7 +462,7 @@ fun TerminalScreen(
                                         Text(
                                             text = sym,
                                             style = TextStyle(
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                color = symbolColor,
                                                 fontFamily = FontFamily.Monospace,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Medium
@@ -637,6 +642,8 @@ fun RowScope.TerminalKeyButton(
     accentColor: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit
 ) {
+    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    val iconSize = 20.dp
     Surface(
         modifier = Modifier
             .weight(1f)
@@ -654,13 +661,13 @@ fun RowScope.TerminalKeyButton(
                 icon != null -> Icon(
                     imageVector = icon,
                     contentDescription = text,
-                    tint = if (isActive) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp)
+                    tint = if (isActive) accentColor else inactiveColor,
+                    modifier = Modifier.size(iconSize)
                 )
                 text != null -> Text(
                     text = text,
                     style = TextStyle(
-                        color = if (isActive) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        color = if (isActive) accentColor else inactiveColor,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
