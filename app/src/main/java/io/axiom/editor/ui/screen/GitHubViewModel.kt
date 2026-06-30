@@ -22,7 +22,10 @@ import io.axiom.editor.ui.model.LocalRepo
 import io.axiom.editor.ui.model.Project
 import io.axiom.editor.ui.model.ProjectType
 import io.axiom.editor.ui.model.RemoteRepo
+import android.os.FileObserver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -74,6 +77,10 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
 
     var expandedTabIndex by mutableStateOf(0)
         private set
+
+    // ── 实时文件监听（FileObserver + debounce）────────────────────────
+    private var fileObserver: FileObserver? = null
+    private var debounceJob: Job? = null
 
     // ── 本地仓库 ──────────────────────────────────────────────────────
     var localRepos by mutableStateOf<List<LocalRepo>>(emptyList())
@@ -659,7 +666,53 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
         if (!wasExpanded) {
             refreshChangedFilesForRepo(repoName)
             loadCommitHistoryForRepo(repoName)
+            startWatching(repoName)
+        } else {
+            stopWatching()
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 实时文件监听
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * 启动对 [repoName] 本地目录的 inotify 监听。
+     * minSdk 30 → 可直接使用 FileObserver(File, mask) 递归构造器。
+     * 文件变化后 debounce 500ms 再触发扫描，避免编辑时每次按键都重扫。
+     */
+    private fun startWatching(repoName: String) {
+        stopWatching()
+        val dir = findProjectDir(repoName) ?: return
+        val mask = FileObserver.CLOSE_WRITE or
+                FileObserver.CREATE       or
+                FileObserver.DELETE       or
+                FileObserver.MOVED_FROM   or
+                FileObserver.MOVED_TO
+        fileObserver = object : FileObserver(dir, mask) {
+            override fun onEvent(event: Int, path: String?) {
+                // 忽略 .git 内部写入（commit/push 期间大量触发）
+                if (path == null || path.startsWith(".git")) return
+                debounceJob?.cancel()
+                debounceJob = viewModelScope.launch {
+                    delay(500)
+                    refreshChangedFilesForRepo(repoName)
+                }
+            }
+        }
+        fileObserver?.startWatching()
+    }
+
+    private fun stopWatching() {
+        fileObserver?.stopWatching()
+        fileObserver = null
+        debounceJob?.cancel()
+        debounceJob = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopWatching()
     }
 
     fun switchExpandedTab(index: Int) {
