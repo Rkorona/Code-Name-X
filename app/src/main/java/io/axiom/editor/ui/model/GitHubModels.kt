@@ -13,3 +13,25 @@ data class RemoteRepo(
     val language: String,
     val description: String = ""
 )
+
+enum class FileChangeStatus(val label: String) {
+    MODIFIED("M"),
+    ADDED("A"),
+    DELETED("D"),
+    RENAMED("R"),
+    UNTRACKED("?")
+}
+
+data class ChangedFile(
+    val path: String,
+    val status: FileChangeStatus,
+    val isStaged: Boolean = false
+)
+
+data class CommitRecord(
+    val hash: String,
+    val shortMessage: String,
+    val author: String,
+    val timeAgo: String,
+    val isPushed: Boolean = true
+)
