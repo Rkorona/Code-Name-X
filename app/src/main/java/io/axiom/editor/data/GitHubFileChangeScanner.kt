@@ -6,6 +6,20 @@ import io.axiom.editor.ui.model.FileChangeStatus
 import java.io.File
 import java.security.MessageDigest
 
+// ═══════════════════════════════════════════════════════════════════
+// Diff 数据结构（冲突查看器使用）
+// ═══════════════════════════════════════════════════════════════════
+
+enum class DiffType { ADDED, REMOVED, CONTEXT, SEPARATOR }
+
+/**
+ * 单行 diff 记录。
+ * @param type      行类型
+ * @param lineNum   行号（ADDED=本地行号，REMOVED=远端行号，CONTEXT/SEPARATOR=null）
+ * @param text      行文本内容
+ */
+data class DiffLine(val type: DiffType, val lineNum: Int?, val text: String)
+
 object GitHubFileChangeScanner {
 
     private const val INDEX_FILE        = "AXIOM_INDEX"
@@ -256,6 +270,81 @@ object GitHubFileChangeScanner {
         val md = MessageDigest.getInstance("MD5")
         md.update(bytes)
         return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 逐行 Diff 计算（LCS 算法，用于冲突查看器）
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * 计算从 [remoteLines]（远端）到 [localLines]（本地）的 diff。
+     * - ADDED   = 仅本地有（我们新增 / 远端没有）→绿色
+     * - REMOVED = 仅远端有（强制推送后会消失）→红色
+     * - CONTEXT = 双方相同
+     * 文件行数超过 600 时跳过计算（避免卡顿），返回空列表。
+     */
+    fun computeDiff(
+        remoteLines: List<String>,
+        localLines: List<String>,
+        contextSize: Int = 3
+    ): List<DiffLine> {
+        val n = remoteLines.size
+        val m = localLines.size
+        if (n > 600 || m > 600) return emptyList()
+
+        // LCS DP
+        val dp = Array(n + 1) { IntArray(m + 1) }
+        for (i in 1..n) {
+            for (j in 1..m) {
+                dp[i][j] = if (remoteLines[i - 1] == localLines[j - 1]) dp[i - 1][j - 1] + 1
+                            else maxOf(dp[i - 1][j], dp[i][j - 1])
+            }
+        }
+
+        // 回溯构建原始 diff 序列（逆序 → addFirst）
+        val raw = ArrayDeque<DiffLine>()
+        var i = n; var j = m
+        while (i > 0 || j > 0) {
+            when {
+                i > 0 && j > 0 && remoteLines[i - 1] == localLines[j - 1] -> {
+                    raw.addFirst(DiffLine(DiffType.CONTEXT, i, remoteLines[i - 1]))
+                    i--; j--
+                }
+                j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j]) -> {
+                    raw.addFirst(DiffLine(DiffType.ADDED, j, localLines[j - 1]))
+                    j--
+                }
+                else -> {
+                    raw.addFirst(DiffLine(DiffType.REMOVED, i, remoteLines[i - 1]))
+                    i--
+                }
+            }
+        }
+
+        return collapseContext(raw.toList(), contextSize)
+    }
+
+    /** 将连续的 CONTEXT 行折叠，只保留变更前后各 [ctx] 行，其余替换为 SEPARATOR。 */
+    private fun collapseContext(lines: List<DiffLine>, ctx: Int): List<DiffLine> {
+        val size = lines.size
+        val keep = BooleanArray(size)
+        lines.forEachIndexed { idx, line ->
+            if (line.type != DiffType.CONTEXT) {
+                for (k in maxOf(0, idx - ctx)..minOf(size - 1, idx + ctx)) keep[k] = true
+            }
+        }
+        val result  = mutableListOf<DiffLine>()
+        var skipping = false
+        for (idx in 0 until size) {
+            if (keep[idx]) {
+                skipping = false
+                result.add(lines[idx])
+            } else if (!skipping) {
+                skipping = true
+                result.add(DiffLine(DiffType.SEPARATOR, null, "···"))
+            }
+        }
+        return result
     }
 
     private fun md5(file: File): String = try {

@@ -40,7 +40,9 @@ data class PushConflictState(
     val repoName: String,
     val pushMessage: String,
     /** 在远端也被修改的文件列表（相对路径） */
-    val conflictFiles: List<String>
+    val conflictFiles: List<String>,
+    /** 各冲突文件的逐行 diff（key = 相对路径，value = DiffLine 列表） */
+    val fileDiffs: Map<String, List<io.axiom.editor.data.DiffLine>> = emptyMap()
 )
 
 class GitHubViewModel(application: Application) : AndroidViewModel(application) {
@@ -588,14 +590,14 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 // ── 冲突检测：比对远端当前内容与本地基线 ──────────────────
-                val conflictFiles = withContext(Dispatchers.IO) {
+                val (conflictFiles, fileDiffs) = withContext(Dispatchers.IO) {
                     detectConflicts(token, fullName, branch, dir, filesToPush)
                 }
                 if (conflictFiles.isNotEmpty()) {
                     // 暂停 push，弹出冲突确认弹窗
                     val resolvedMessage = buildPushMessage(dir, pushMessage, filesToPush.size)
                     setRepoOp(repoName, null)
-                    pushConflictState = PushConflictState(repoName, resolvedMessage, conflictFiles)
+                    pushConflictState = PushConflictState(repoName, resolvedMessage, conflictFiles, fileDiffs)
                     return@launch
                 }
 
@@ -640,7 +642,7 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * 对比每个待推送文件的远端当前内容 vs 本地基线（AXIOM_REMOTE_INDEX）的 MD5。
      * 若远端内容变化 → 说明该文件被其他人修改过 → 冲突。
-     * 仅对 MODIFIED / DELETED 文件检测（ADDED 文件在远端不存在，无法冲突）。
+     * 同时计算冲突文件的逐行 diff（remote → local），供 UI 展示。
      */
     private fun detectConflicts(
         token: String,
@@ -648,19 +650,26 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
         branch: String,
         projectDir: File,
         filesToPush: List<io.axiom.editor.ui.model.ChangedFile>
-    ): List<String> {
+    ): Pair<List<String>, Map<String, List<io.axiom.editor.data.DiffLine>>> {
         val baselineMap = GitHubFileChangeScanner.readRemoteIndexMap(projectDir)
         val conflicts   = mutableListOf<String>()
+        val diffs       = mutableMapOf<String, List<io.axiom.editor.data.DiffLine>>()
+
         for (file in filesToPush) {
-            val baselineMd5 = baselineMap[file.path] ?: continue // ADDED 文件，基线中没有 → 跳过
+            val baselineMd5 = baselineMap[file.path] ?: continue // ADDED 文件 → 跳过
             val remoteBytes = GitHubOAuthService.downloadRemoteFileBytes(token, fullName, file.path, branch)
-                ?: continue // 远端不存在（已删除）→ 跳过
+                ?: continue // 远端已删除 → 跳过
             val remoteMd5 = GitHubFileChangeScanner.md5OfBytes(remoteBytes)
             if (remoteMd5 != baselineMd5) {
                 conflicts.add(file.path)
+                // 计算 diff：remote 为基准，local 为目标
+                val localFile = File(projectDir, file.path)
+                val remoteLines = remoteBytes.toString(Charsets.UTF_8).lines()
+                val localLines  = if (localFile.exists()) localFile.readLines() else emptyList()
+                diffs[file.path] = GitHubFileChangeScanner.computeDiff(remoteLines, localLines)
             }
         }
-        return conflicts
+        return Pair(conflicts, diffs)
     }
 
     private suspend fun buildPushMessage(dir: File, pushMessage: String, fileCount: Int): String =

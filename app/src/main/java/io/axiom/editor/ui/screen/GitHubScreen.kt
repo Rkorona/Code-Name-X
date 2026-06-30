@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1408,7 +1411,7 @@ private fun LoginBottomSheet(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Push 冲突确认弹窗
+// Push 冲突确认弹窗（含逐行 Diff 查看器）
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
@@ -1421,134 +1424,263 @@ private fun PushConflictSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
-        onDismissRequest   = onDismiss,
-        sheetState         = sheetState,
-        containerColor     = colors.card,
-        dragHandle         = null
+        onDismissRequest = onDismiss,
+        sheetState       = sheetState,
+        containerColor   = colors.card,
+        dragHandle       = null
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(top = 28.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+        LazyColumn(
+            modifier            = Modifier.fillMaxWidth(),
+            contentPadding      = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 标题行
-            Row(
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Box(
-                    modifier          = Modifier
-                        .size(36.dp)
-                        .background(colors.accentRedAlpha, RoundedCornerShape(10.dp)),
-                    contentAlignment  = Alignment.Center
+            // ── 标题 ───────────────────────────────────────────────────
+            item {
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(
-                        imageVector        = Icons.Rounded.Info,
-                        contentDescription = null,
-                        tint               = colors.accentRed,
-                        modifier           = Modifier.size(18.dp)
-                    )
-                }
-                Column {
-                    Text(
-                        text       = "检测到合并冲突",
-                        fontSize   = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color      = colors.textPrimary
-                    )
-                    Text(
-                        text     = "${conflict.conflictFiles.size} 个文件在远端已被修改",
-                        fontSize = 12.sp,
-                        color    = colors.textSecondary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 冲突文件列表
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.cardExpanded, RoundedCornerShape(10.dp))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                conflict.conflictFiles.take(8).forEach { path ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment     = Alignment.CenterVertically
+                    Box(
+                        modifier         = Modifier
+                            .size(36.dp)
+                            .background(colors.accentRedAlpha, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
+                        Icon(
+                            imageVector        = Icons.Rounded.Info,
+                            contentDescription = null,
+                            tint               = colors.accentRed,
+                            modifier           = Modifier.size(18.dp)
+                        )
+                    }
+                    Column {
                         Text(
-                            text     = "M",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color    = colors.accentRed,
-                            modifier = Modifier
-                                .background(colors.accentRedAlpha, RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                            text       = "检测到合并冲突",
+                            fontSize   = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = colors.textPrimary
                         )
                         Text(
-                            text     = path,
+                            text     = "${conflict.conflictFiles.size} 个文件在远端同时被修改",
                             fontSize = 12.sp,
-                            color    = colors.textSecondary,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            color    = colors.textSecondary
                         )
                     }
                 }
-                if (conflict.conflictFiles.size > 8) {
-                    Text(
-                        text     = "…还有 ${conflict.conflictFiles.size - 8} 个文件",
-                        fontSize = 11.sp,
-                        color    = colors.textMuted
-                    )
+            }
+
+            // ── 可展开的冲突文件 Diff ───────────────────────────────────
+            items(conflict.conflictFiles) { path ->
+                ConflictFileDiffRow(
+                    path      = path,
+                    diffLines = conflict.fileDiffs[path].orEmpty(),
+                    colors    = colors
+                )
+            }
+
+            // ── 提示文字 ────────────────────────────────────────────────
+            item {
+                Text(
+                    text       = "强制推送会用你的本地版本覆盖远端改动，建议先 Pull 拉取最新内容后再推送。",
+                    fontSize   = 13.sp,
+                    color      = colors.textSecondary,
+                    lineHeight = 18.sp
+                )
+            }
+
+            // ── 操作按钮 ────────────────────────────────────────────────
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick        = onForcePush,
+                        modifier       = Modifier.fillMaxWidth(),
+                        shape          = RoundedCornerShape(12.dp),
+                        colors         = ButtonDefaults.buttonColors(containerColor = colors.accentRed),
+                        contentPadding = PaddingValues(vertical = 14.dp)
+                    ) {
+                        Text(
+                            text       = "强制推送（覆盖远端）",
+                            fontSize   = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = Color.White
+                        )
+                    }
+                    TextButton(
+                        onClick  = onDismiss,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text       = "取消，先 Pull 再推送",
+                            color      = colors.accentBlueLight,
+                            fontSize   = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            item { Spacer(modifier = Modifier.height(16.dp)) }
+        }
+    }
+}
 
+// ── 单个冲突文件的可展开 Diff 行 ─────────────────────────────────────
+
+@Composable
+private fun ConflictFileDiffRow(
+    path: String,
+    diffLines: List<io.axiom.editor.data.DiffLine>,
+    colors: io.axiom.editor.ui.theme.GitHubColorScheme
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val addedCount   = diffLines.count { it.type == io.axiom.editor.data.DiffType.ADDED }
+    val removedCount = diffLines.count { it.type == io.axiom.editor.data.DiffType.REMOVED }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.cardExpanded, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(10.dp))
+    ) {
+        // 文件头：点击展开/折叠
+        Row(
+            modifier              = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = diffLines.isNotEmpty()) { expanded = !expanded }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
-                text     = "你的本地修改与远端修改冲突。强制推送会覆盖远端的改动，建议先 Pull 拉取最新内容后再推送。",
-                fontSize = 13.sp,
-                color    = colors.textSecondary,
-                lineHeight = 18.sp
+                text       = "M",
+                fontSize   = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color      = colors.accentRed,
+                modifier   = Modifier
+                    .background(colors.accentRedAlpha, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
             )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 操作按钮
-            Button(
-                onClick        = onForcePush,
-                modifier       = Modifier.fillMaxWidth(),
-                shape          = RoundedCornerShape(12.dp),
-                colors         = ButtonDefaults.buttonColors(containerColor = colors.accentRed),
-                contentPadding = PaddingValues(vertical = 14.dp)
-            ) {
-                Text(
-                    text       = "强制推送（覆盖远端）",
-                    fontSize   = 15.sp,
+            Text(
+                text       = path.substringAfterLast('/'),
+                fontSize   = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color      = colors.textPrimary,
+                modifier   = Modifier.weight(1f),
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis
+            )
+            // +n / -n 徽章
+            if (diffLines.isNotEmpty()) {
+                if (addedCount > 0) Text(
+                    text     = "+$addedCount",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color      = Color.White
+                    color    = Color(0xFF4CAF50)
                 )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextButton(
-                onClick  = onDismiss,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+                if (removedCount > 0) Text(
+                    text     = "-$removedCount",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color    = colors.accentRed
+                )
+                Icon(
+                    imageVector        = if (expanded) Icons.Rounded.KeyboardArrowUp
+                                        else Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint               = colors.textMuted,
+                    modifier           = Modifier.size(16.dp)
+                )
+            } else {
                 Text(
-                    text     = "取消，先 Pull 再推送",
-                    color    = colors.accentBlueLight,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    text     = "文件过大",
+                    fontSize = 11.sp,
+                    color    = colors.textMuted
                 )
             }
         }
+
+        // 文件路径副标题（始终显示）
+        Text(
+            text     = path,
+            fontSize = 10.sp,
+            color    = colors.textMuted,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 8.dp)
+        )
+
+        // Diff 内容（展开时显示）
+        AnimatedVisibility(
+            visible = expanded && diffLines.isNotEmpty(),
+            enter   = fadeIn() + expandVertically(),
+            exit    = fadeOut() + shrinkVertically()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D0D0D))
+            ) {
+                diffLines.forEach { line ->
+                    DiffLineRow(line = line, colors = colors)
+                }
+            }
+        }
+    }
+}
+
+// ── 单行 Diff ────────────────────────────────────────────────────────
+
+@Composable
+private fun DiffLineRow(
+    line: io.axiom.editor.data.DiffLine,
+    colors: io.axiom.editor.ui.theme.GitHubColorScheme
+) {
+    val (prefix, bgColor, textColor) = when (line.type) {
+        io.axiom.editor.data.DiffType.ADDED    -> Triple("+", Color(0xFF1A3A1A), Color(0xFF81C784))
+        io.axiom.editor.data.DiffType.REMOVED  -> Triple("-", Color(0xFF3A1A1A), Color(0xFFE57373))
+        io.axiom.editor.data.DiffType.SEPARATOR-> Triple(" ", Color.Transparent, colors.textMuted)
+        else                                   -> Triple(" ", Color.Transparent, colors.textSecondary)
+    }
+    val isSeparator = line.type == io.axiom.editor.data.DiffType.SEPARATOR
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bgColor)
+            .padding(vertical = 1.dp)
+    ) {
+        // 行号列
+        Text(
+            text       = if (isSeparator || line.lineNum == null) "  " else "${line.lineNum}",
+            fontSize   = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            color      = colors.textMuted,
+            modifier   = Modifier
+                .widthIn(min = 28.dp)
+                .padding(start = 6.dp, end = 4.dp),
+            textAlign  = androidx.compose.ui.text.style.TextAlign.End
+        )
+        // 前缀符号
+        Text(
+            text       = prefix,
+            fontSize   = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color      = textColor,
+            modifier   = Modifier.width(12.dp)
+        )
+        // 行内容
+        Text(
+            text       = if (isSeparator) line.text else line.text,
+            fontSize   = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color      = textColor,
+            softWrap   = false,
+            overflow   = TextOverflow.Ellipsis,
+            modifier   = Modifier
+                .weight(1f)
+                .padding(end = 8.dp)
+        )
     }
 }
