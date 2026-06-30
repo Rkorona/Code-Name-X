@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.net.toUri
@@ -11,15 +12,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.axiom.editor.data.GitHubOAuthBus
 import io.axiom.editor.data.GitHubOAuthService
+import io.axiom.editor.data.GitHubRepoScanner
 import io.axiom.editor.data.GitHubStore
+import io.axiom.editor.data.ProjectRepository
 import io.axiom.editor.ui.model.ChangedFile
 import io.axiom.editor.ui.model.CommitRecord
 import io.axiom.editor.ui.model.FileChangeStatus
 import io.axiom.editor.ui.model.LocalRepo
+import io.axiom.editor.ui.model.Project
+import io.axiom.editor.ui.model.ProjectType
 import io.axiom.editor.ui.model.RemoteRepo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 enum class GitHubLoginState { Idle, Loading, Error }
 
@@ -44,7 +50,21 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     var userAvatarUrl by mutableStateOf<String?>(null)
         private set
 
+    // ── 仓库加载状态 ──────────────────────────────────────────────────
     var reposLoading by mutableStateOf(false)
+        private set
+
+    // ── 克隆状态 ──────────────────────────────────────────────────────
+    var cloningRepoName by mutableStateOf<String?>(null)
+        private set
+
+    var cloneProgress by mutableFloatStateOf(0f)
+        private set
+
+    var cloneMessage by mutableStateOf<String?>(null)
+        private set
+
+    var cloneIsError by mutableStateOf(false)
         private set
 
     init {
@@ -53,6 +73,11 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
         userName      = saved.username
         userAvatarUrl = saved.avatarUrl.ifEmpty { null }
         accessToken   = saved.accessToken
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val scanned = GitHubRepoScanner.scan(application)
+            withContext(Dispatchers.Main) { localRepos = scanned }
+        }
 
         if (isLoggedIn && accessToken.isNotEmpty()) {
             fetchUserRepos()
@@ -72,14 +97,8 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     var expandedTabIndex by mutableStateOf(0)
         private set
 
-    // ── 本地仓库数据（占位，后续接入 libgit2） ────────────────────────
-    var localRepos by mutableStateOf(
-        listOf(
-            LocalRepo("codemirror6", "main", uncommittedChanges = 2),
-            LocalRepo("axiom-editor", "feature/git-integration", unpushedCommits = 1),
-            LocalRepo("kotlin-compiler", "develop")
-        )
-    )
+    // ── 本地仓库（从文件系统扫描）────────────────────────────────────
+    var localRepos by mutableStateOf<List<LocalRepo>>(emptyList())
         private set
 
     var changedFiles by mutableStateOf(
@@ -124,7 +143,7 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     )
         private set
 
-    // ── 云端仓库数据（真实 API） ───────────────────────────────────────
+    // ── 云端仓库 ──────────────────────────────────────────────────────
     var remoteRepos by mutableStateOf<List<RemoteRepo>>(emptyList())
         private set
 
@@ -174,10 +193,106 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 remoteRepos = repos
             } catch (_: Exception) {
-                // 保持现有列表，静默失败
             } finally {
                 reposLoading = false
             }
+        }
+    }
+
+    // ── 克隆仓库 ──────────────────────────────────────────────────────
+
+    fun cloneRepo(repo: RemoteRepo, context: Context) {
+        if (cloningRepoName != null) return
+        val token = accessToken
+        if (token.isEmpty()) return
+
+        viewModelScope.launch {
+            cloningRepoName = repo.fullName
+            cloneProgress   = 0f
+            cloneMessage    = null
+            cloneIsError    = false
+
+            val externalDir = context.getExternalFilesDir(null) ?: context.filesDir
+            val destDir = File(externalDir, "projects/${repo.name}")
+
+            if (destDir.exists() && File(destDir, ".git").exists()) {
+                cloneMessage = "'${repo.name}' 已存在于本地"
+                cloneIsError = false
+                cloningRepoName = null
+                return@launch
+            }
+
+            try {
+                val (branch, sha) = withContext(Dispatchers.IO) {
+                    val b = GitHubOAuthService.getDefaultBranch(token, repo.fullName)
+                    destDir.mkdirs()
+                    val s = GitHubOAuthService.downloadAndExtractRepo(
+                        token    = token,
+                        fullName = repo.fullName,
+                        branch   = b,
+                        destDir  = destDir
+                    ) { progress ->
+                        cloneProgress = progress
+                    }
+                    b to s
+                }
+
+                withContext(Dispatchers.IO) {
+                    setupGitDir(destDir, repo, branch, sha)
+                }
+
+                ProjectRepository(context).addProject(
+                    Project(
+                        id           = System.currentTimeMillis().toString(),
+                        name         = repo.name,
+                        description  = repo.description,
+                        type         = ProjectType.GITHUB,
+                        lastModified = System.currentTimeMillis(),
+                        isActive     = false,
+                        localPath    = destDir.absolutePath
+                    )
+                )
+
+                val scanned = withContext(Dispatchers.IO) { GitHubRepoScanner.scan(context) }
+                localRepos   = scanned
+                cloneMessage = "✓ '${repo.name}' 克隆成功"
+                cloneIsError = false
+            } catch (e: Exception) {
+                destDir.deleteRecursively()
+                cloneMessage = "克隆失败：${e.message ?: "未知错误"}"
+                cloneIsError = true
+            } finally {
+                cloningRepoName = null
+                cloneProgress   = 0f
+            }
+        }
+    }
+
+    fun dismissCloneMessage() {
+        cloneMessage = null
+    }
+
+    private fun setupGitDir(destDir: File, repo: RemoteRepo, branch: String, sha: String) {
+        val gitDir = File(destDir, ".git")
+        gitDir.mkdirs()
+        File(gitDir, "HEAD").writeText("ref: refs/heads/$branch\n")
+        File(gitDir, "config").writeText("""
+[core]
+        repositoryformatversion = 0
+        filemode = false
+        bare = false
+[remote "origin"]
+        url = https://github.com/${repo.fullName}.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "$branch"]
+        remote = origin
+        merge = refs/heads/$branch
+""".trimIndent())
+        if (sha.length == 40) {
+            File(gitDir, "refs/heads").mkdirs()
+            File(gitDir, "refs/remotes/origin").mkdirs()
+            File(gitDir, "refs/heads/$branch").writeText("$sha\n")
+            File(gitDir, "refs/remotes/origin/$branch").writeText("$sha\n")
         }
     }
 
@@ -189,13 +304,15 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun logout() {
-        isLoggedIn    = false
-        userName      = ""
-        userAvatarUrl = null
-        accessToken   = ""
-        remoteRepos   = emptyList()
-        loginState    = GitHubLoginState.Idle
-        loginError    = ""
+        isLoggedIn      = false
+        userName        = ""
+        userAvatarUrl   = null
+        accessToken     = ""
+        remoteRepos     = emptyList()
+        cloningRepoName = null
+        cloneMessage    = null
+        loginState      = GitHubLoginState.Idle
+        loginError      = ""
         store.clear()
     }
 

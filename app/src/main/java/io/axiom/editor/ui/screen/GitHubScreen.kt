@@ -47,6 +47,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -107,6 +108,15 @@ fun GitHubScreen(
         LaunchedEffect(viewModel.isLoggedIn) {
             if (viewModel.isLoggedIn && showLoginSheet) {
                 onLoginSheetDismiss()
+            }
+        }
+
+        val context = LocalContext.current
+
+        LaunchedEffect(viewModel.cloneMessage) {
+            if (viewModel.cloneMessage != null) {
+                kotlinx.coroutines.delay(3500)
+                viewModel.dismissCloneMessage()
             }
         }
 
@@ -205,14 +215,22 @@ fun GitHubScreen(
                     }
                 } else {
                     items(filteredRepos, key = { it.fullName }) { repo ->
-                        RemoteRepoCard(repo = repo, modifier = Modifier.animateItem())
+                        val isCloning = viewModel.cloningRepoName == repo.fullName
+                        val isCloned  = viewModel.localRepos.any { it.name == repo.name }
+                        RemoteRepoCard(
+                            repo          = repo,
+                            isCloning     = isCloning,
+                            cloneProgress = if (isCloning) viewModel.cloneProgress else 0f,
+                            isCloned      = isCloned,
+                            onClone       = { viewModel.cloneRepo(repo, context) },
+                            modifier      = Modifier.animateItem()
+                        )
                     }
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
 
-            val context = LocalContext.current
             if (showLoginSheet) {
                 LoginBottomSheet(
                     sheetState = sheetState,
@@ -224,6 +242,41 @@ fun GitHubScreen(
                     },
                     onStartOAuth = { viewModel.startOAuthFlow(context) }
                 )
+            }
+
+            // 克隆结果通知横条
+            AnimatedVisibility(
+                visible = viewModel.cloneMessage != null,
+                enter = fadeIn() + expandVertically(expandFrom = androidx.compose.ui.Alignment.Bottom),
+                exit = fadeOut() + shrinkVertically(shrinkTowards = androidx.compose.ui.Alignment.Bottom),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                val msg     = viewModel.cloneMessage ?: ""
+                val isError = viewModel.cloneIsError
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isError) colors.accentRedAlpha
+                            else colors.accentBlueAlpha
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isError) Icons.Rounded.Info else Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = if (isError) colors.accentRed else colors.accentBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = msg,
+                        fontSize = 13.sp,
+                        color = if (isError) colors.accentRed else colors.accentBlue,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }
@@ -900,73 +953,132 @@ private fun RemoteSearchBar(query: String, onQueryChange: (String) -> Unit) {
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-private fun RemoteRepoCard(repo: RemoteRepo, modifier: Modifier = Modifier) {
+private fun RemoteRepoCard(
+    repo: RemoteRepo,
+    isCloning: Boolean,
+    cloneProgress: Float,
+    isCloned: Boolean,
+    onClone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val colors = LocalGitHubColors.current
     Card(
         modifier = modifier.fillMaxWidth().padding(vertical = 5.dp),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = colors.card)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = repo.fullName.ifEmpty { repo.name },
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (repo.isPrivate) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text(
-                            text = "私有",
-                            fontSize = 10.sp,
-                            color = colors.textMuted,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier
-                                .background(colors.accentBlueAlpha, RoundedCornerShape(4.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                            text = repo.fullName.ifEmpty { repo.name },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (repo.isPrivate) {
+                            Text(
+                                text = "私有",
+                                fontSize = 10.sp,
+                                color = colors.textMuted,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier
+                                    .background(colors.accentBlueAlpha, RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (repo.description.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = repo.description,
+                            fontSize = 12.sp,
+                            color = colors.textSecondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 16.sp
                         )
                     }
-                }
-                if (repo.description.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = repo.description,
-                        fontSize = 12.sp,
-                        color = colors.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 16.sp
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (repo.stars > 0) {
-                        Text("★ ${formatStars(repo.stars)}", fontSize = 12.sp, color = colors.textSecondary)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (repo.stars > 0) {
+                            Text("★ ${formatStars(repo.stars)}", fontSize = 12.sp, color = colors.textSecondary)
+                        }
+                        if (repo.language.isNotEmpty()) {
+                            Text(repo.language, fontSize = 12.sp, color = colors.textSecondary)
+                        }
                     }
-                    if (repo.language.isNotEmpty()) {
-                        Text(repo.language, fontSize = 12.sp, color = colors.textSecondary)
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                when {
+                    isCloning -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = colors.accentBlue,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${(cloneProgress * 100).toInt()}%",
+                                fontSize = 10.sp,
+                                color = colors.textMuted
+                            )
+                        }
+                    }
+                    isCloned -> {
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                disabledContainerColor = colors.accentBlueAlpha
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = colors.accentBlueLight,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("已克隆", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.accentBlueLight)
+                        }
+                    }
+                    else -> {
+                        Button(
+                            onClick = onClone,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlueAlpha2),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text("克隆", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.accentBlueLight)
+                        }
                     }
                 }
             }
-            Spacer(modifier = Modifier.width(10.dp))
-            Button(
-                onClick = {},
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = colors.accentBlueAlpha2),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Text("克隆", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.accentBlueLight)
+
+            if (isCloning && cloneProgress > 0f) {
+                LinearProgressIndicator(
+                    progress = { cloneProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = colors.accentBlue,
+                    trackColor = colors.accentBlueAlpha
+                )
             }
         }
     }
