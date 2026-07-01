@@ -6,17 +6,17 @@
     <title>Terminal</title>
     <link rel="stylesheet" href="./assets/index.css">
     <style>
+        * { box-sizing: border-box; }
         html, body {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            background: #1e1e1e;
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
             overflow: hidden;
+            background: #1e1e1e;
         }
         #terminal-container {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
+            position: fixed;
+            top: 0; left: 0;
+            overflow: hidden;
         }
     </style>
 </head>
@@ -27,10 +27,19 @@
     (function () {
         if (typeof a === 'undefined') return;
 
-        // 保存 bundle 设置的原始 o.fit() 引用，必须在覆写前保存
-        var _doRealFit = window.TerminalBridge.resizeTerminal.bind(window.TerminalBridge);
+        var el = document.getElementById('terminal-container');
 
-        // ── xterm resize 事件 → 通知 Android ──────────────
+        // 用 JS 直接设置像素尺寸，完全绕开 CSS 继承歧义
+        function applyContainerSize() {
+            el.style.width  = window.innerWidth  + 'px';
+            el.style.height = window.innerHeight + 'px';
+        }
+        applyContainerSize();
+
+        // 保存 bundle 里真正的 o.fit()，必须在此处立即保存（覆写之前）
+        var _realFit = window.TerminalBridge.resizeTerminal.bind(window.TerminalBridge);
+
+        // ── xterm resize → 通知 Android ────────────────────
         a.onResize(function (size) {
             if (window.AndroidBridge && window.AndroidBridge.onResize) {
                 window.AndroidBridge.onResize(size.rows, size.cols);
@@ -47,55 +56,42 @@
             } catch (e) {}
         };
 
-        // ── 字体大小 / 主题 API ──────────────────────────
+        // ── 字体大小 / 主题 ──────────────────────────────
         window.setFontSize = function (size) {
             a.options.fontSize = size;
-            scheduleFit();
+            doFit();
         };
-
         window.setTheme = function (bg, fg) {
             a.options.theme = { background: bg, foreground: fg };
         };
 
-        // ── 带重试的 fit 调度器 ─────────────────────────
-        // _doRealFit() 调用原始 o.fit()，scheduleFit 只是触发时机控制器
-        var fitScheduled = false;
-        var fitAttempts  = 0;
-
+        // ── fit：先更新容器尺寸，再调真正的 o.fit() ─────────
         function doFit() {
-            fitScheduled = false;
-            var el = document.getElementById('terminal-container');
-            if (!el) return;
-            var rect = el.getBoundingClientRect();
-            if (rect.height <= 0 || rect.width <= 0) {
-                // 容器还没尺寸，稍后重试
-                if (fitAttempts < 30) {
-                    fitAttempts++;
-                    setTimeout(scheduleFit, 100);
-                }
-                return;
-            }
-            fitAttempts = 0;
-            _doRealFit(); // 调用真正的 o.fit()
+            applyContainerSize();
+            _realFit();
         }
 
-        function scheduleFit() {
-            if (fitScheduled) return;
-            fitScheduled = true;
-            requestAnimationFrame(doFit);
+        // 暴露给 Kotlin 侧
+        window.TerminalBridge.resizeTerminal = doFit;
+
+        // 立即执行一次（bundle 的 o.fit() 在 open 时可能尺寸还是 0）
+        doFit();
+
+        // 保险：多个时间点重试
+        [50, 150, 350, 700].forEach(function(ms) {
+            setTimeout(doFit, ms);
+        });
+
+        // ResizeObserver：容器真正获得尺寸时触发
+        if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(doFit).observe(el);
         }
 
-        // 覆写 TerminalBridge.resizeTerminal，让 Kotlin 侧调用也走重试逻辑
-        window.TerminalBridge.resizeTerminal = scheduleFit;
-
-        // 初始 fit（多个时间点保险触发）
-        scheduleFit();
-        setTimeout(scheduleFit, 100);
-        setTimeout(scheduleFit, 400);
-        setTimeout(scheduleFit, 800);
-
-        // window resize 时重新 fit
-        window.addEventListener('resize', scheduleFit);
+        // window resize（键盘弹出/收起）
+        window.addEventListener('resize', function () {
+            applyContainerSize();
+            doFit();
+        });
 
     })();
     </script>
