@@ -100,9 +100,8 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.documentfile:documentfile:1.1.0")
-    implementation("org.apache.commons:commons-compress:1.28.0")
-    
-    implementation("dev.vicart:compose-material-symbols:1.1.5")
+    implementation("org.apache.commons:commons-compress:1.28.0")    
+    implementation("dev.vicart:compose-material-symbols:1.1.4")
 
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
