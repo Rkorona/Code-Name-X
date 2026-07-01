@@ -69,11 +69,58 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     private val context get() = getApplication<Application>()
     val rootfsDir = File(context.filesDir, "debian_rootfs")
     private val tarXzFile = File(context.cacheDir, "rootfs.tar.xz")
-    val imageUrl =
-        "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260627_14%3A22/rootfs.tar.xz"
+
+    // LXC 元数据索引，用于动态解析最新构建 URL
+    private val lxcIndexUrl = "https://images.linuxcontainers.org/meta/1.0/index-user"
+    private val lxcBase     = "https://images.linuxcontainers.org"
 
     init {
         checkEnvironment()
+    }
+
+    // ─────────────────────────────────────────────
+    // 动态解析最新 Debian trixie arm64 rootfs URL
+    // 从 LXC index-user 找到最新构建目录，避免硬编码日期
+    // ─────────────────────────────────────────────
+    private suspend fun resolveLatestImageUrl(
+        onStatusChanged: (String) -> Unit
+    ): String? = withContext(Dispatchers.IO) {
+        withContext(Dispatchers.Main) { onStatusChanged("正在查询最新镜像版本…") }
+        var connection: HttpURLConnection? = null
+        try {
+            connection = URL(lxcIndexUrl).openConnection() as HttpURLConnection
+            connection.connectTimeout = 15000
+            connection.readTimeout    = 15000
+            connection.setRequestProperty("User-Agent",
+                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+
+            // index-user 每行格式（制表符分隔）：
+            // distro  release  arch  variant  version  path
+            // debian  trixie   arm64 default  20260701_05:24  /images/debian/trixie/arm64/default/20260701_05:24/
+            val latestPath = connection.inputStream.bufferedReader().useLines { lines ->
+                lines.filter { line ->
+                    val parts = line.split("\t")
+                    parts.size >= 6 &&
+                    parts[0] == "debian" &&
+                    parts[1] == "trixie" &&
+                    parts[2] == "arm64" &&
+                    parts[3] == "default"
+                }.map { line ->
+                    val parts = line.split("\t")
+                    Pair(parts[4], parts[5]) // (version, path)
+                }.maxByOrNull { (version, _) ->
+                    version // lexicographic 排序足够（YYYYMMDD_HH:MM 格式）
+                }?.second
+            } ?: return@withContext null
+
+            "$lxcBase${latestPath}rootfs.tar.xz"
+        } catch (e: Exception) {
+            Log.e("TerminalViewModel", "resolveLatestImageUrl failed", e)
+            null
+        } finally {
+            connection?.disconnect()
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -285,8 +332,20 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     fun startInstallDebian() {
         viewModelScope.launch {
             envState = EnvironmentState.Downloading
+
+            // 先动态查询最新 rootfs URL，避免硬编码日期失效
+            val resolvedUrl = resolveLatestImageUrl(
+                onStatusChanged = { currentStatusMessage = it }
+            )
+            if (resolvedUrl == null) {
+                currentStatusMessage = "❌ 无法获取镜像索引，请检查网络连接"
+                envState = EnvironmentState.NotInstalled
+                return@launch
+            }
+            Log.d("TerminalViewModel", "resolved image url: $resolvedUrl")
+
             val downloadOk = performDownloadRootfs(
-                downloadUrl = imageUrl,
+                downloadUrl = resolvedUrl,
                 targetFile = tarXzFile,
                 onProgress = { downloadProgress = it },
                 onStatusChanged = { currentStatusMessage = it }
