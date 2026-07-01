@@ -368,7 +368,12 @@ fun EditorScreen(
     // ─────────────────────────────────────────────────────────
     LaunchedEffect(filePath) {
         isFileLoaded = false
-        isWebViewLoading = true
+        // 只有编辑器 WebView 本身尚未就绪时才显示全屏 loading；
+        // 文件切换时 WebView 不会重新加载页面，onPageFinished 不会再触发，
+        // 若此处无条件 isWebViewLoading=true 则 spinner 永远不会消失。
+        if (!isEditorReady) {
+            isWebViewLoading = true
+        }
 
         // 快照：记录本次 Effect 启动时的路径，防止旧协程注入新文件内容
         val targetPath = filePath
