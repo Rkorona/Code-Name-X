@@ -476,7 +476,7 @@ fun FileExplorerSheet(
 
             // 自动展开到 initialFilePath 所在目录
             if (initialFilePath.isNotEmpty() && !path.startsWith("content://")) {
-                // 计算从 rootPath 到 initialFilePath 父目录的所有祖先路径
+                // 普通文件路径：计算从 rootPath 到 initialFilePath 父目录的所有祖先路径
                 val ancestors = mutableSetOf(rootPath)
                 var cur = java.io.File(initialFilePath).parentFile
                 while (cur != null) {
@@ -499,6 +499,42 @@ fun FileExplorerSheet(
                             childrenCache = childrenCache + newEntries
                         }
                     }
+                }
+            } else if (initialFilePath.isNotEmpty() && path.startsWith("content://")) {
+                // SAF 路径：用 DocumentsContract 解析 docId 层级，构造祖先 URI
+                val safUri = Uri.parse(path)
+                val fileUri = Uri.parse(initialFilePath)
+                runCatching {
+                    val treeRootDocId = DocumentsContract.getTreeDocumentId(safUri)
+                    val fileDocId = DocumentsContract.getDocumentId(fileUri)
+                    if (fileDocId.startsWith(treeRootDocId)) {
+                        val relParts = fileDocId.removePrefix(treeRootDocId)
+                            .trimStart('/').split('/').filter { it.isNotEmpty() }
+                        val ancestors = mutableSetOf(rootPath)
+                        val dirsToPreload = mutableListOf<String>()
+                        var curDocId = treeRootDocId
+                        for (i in 0 until relParts.size - 1) {
+                            curDocId = "$curDocId/${relParts[i]}"
+                            val ancestorUri = DocumentsContract.buildDocumentUriUsingTree(safUri, curDocId)
+                            ancestors.add(ancestorUri.toString())
+                            dirsToPreload.add(ancestorUri.toString())
+                        }
+                        expandedPaths = ancestors
+                        if (dirsToPreload.isNotEmpty()) {
+                            scope.launch(Dispatchers.IO) {
+                                val newEntries = dirsToPreload.associateWith { dirPath ->
+                                    loadSheetSafChildren(context, safUri, dirPath)
+                                }
+                                withContext(Dispatchers.Main) {
+                                    childrenCache = childrenCache + newEntries
+                                }
+                            }
+                        }
+                    } else {
+                        expandedPaths = setOf(rootPath)
+                    }
+                }.onFailure {
+                    expandedPaths = setOf(rootPath)
                 }
             } else {
                 expandedPaths = setOf(rootPath)
@@ -698,6 +734,7 @@ fun FileExplorerSheet(
                                                 row = row,
                                                 isExpanded = isExpanded,
                                                 isLoading = row.node.path in loadingDirs,
+                                                isCurrentFile = !row.node.isDirectory && row.node.path == initialFilePath,
                                                 onClick = {
                                                     if (row.node.isDirectory) {
                                                         if (isExpanded) {
@@ -873,12 +910,20 @@ fun FileExplorerSheet(
 }
 
 @Composable
-private fun SheetFileTreeRow(row: SheetDisplayRow, isExpanded: Boolean, isLoading: Boolean, onClick: () -> Unit, onContextMenu: () -> Unit) {
+private fun SheetFileTreeRow(row: SheetDisplayRow, isExpanded: Boolean, isLoading: Boolean, isCurrentFile: Boolean = false, onClick: () -> Unit, onContextMenu: () -> Unit) {
     val node = row.node
     val indentDp = (row.depth * 12 + 4).dp
     val chevronDeg by animateFloatAsState(targetValue = if (isExpanded) 90f else 0f, label = "chevron_${node.path}")
+    val primaryColor = MaterialTheme.colorScheme.primary
 
-    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = indentDp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isCurrentFile) Modifier.background(primaryColor.copy(alpha = 0.12f)) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(start = indentDp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (node.isDirectory) {
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
@@ -893,7 +938,16 @@ private fun SheetFileTreeRow(row: SheetDisplayRow, isExpanded: Boolean, isLoadin
             SheetFileExtBadge(node.extension)
         }
         Spacer(modifier = Modifier.width(10.dp))
-        Text(text = node.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), fontFamily = if (!node.isDirectory) FontFamily.Monospace else FontFamily.Default)
+        Text(
+            text = node.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isCurrentFile) primaryColor else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (isCurrentFile) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+            fontFamily = if (!node.isDirectory) FontFamily.Monospace else FontFamily.Default
+        )
         IconButton(onClick = onContextMenu, modifier = Modifier.size(36.dp)) {
             Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
         }
