@@ -33,9 +33,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-//import dev.vicart.box.materialsymbols.MaterialSymbols
-//import dev.vicart.box.materialsymbols.FilledSymbol
-//import dev.vicart.box.materialsymbols.OutlinedSymbol
+import dev.vicart.materialsymbols.MaterialSymbols
+import dev.vicart.materialsymbols.FilledSymbol
+import dev.vicart.materialsymbols.OutlinedSymbol
 
 
 import androidx.compose.ui.text.font.FontFamily
