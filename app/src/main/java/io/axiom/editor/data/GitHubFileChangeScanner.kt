@@ -183,14 +183,19 @@ object GitHubFileChangeScanner {
         file.writeText(updated.joinToString("\n") + "\n")
     }
 
-    /** 读取提交日志，最新在前 */
-    fun readCommits(projectDir: File): List<CommitRecord> {
+    /** 读取提交日志，最新在前
+     * @param limit 最多返回多少条（默认全部）
+     * @param skip  跳过前多少条（用于分页）
+     */
+    fun readCommits(projectDir: File, limit: Int = Int.MAX_VALUE, skip: Int = 0): List<CommitRecord> {
         val file = File(projectDir, ".git/$COMMITS_FILE")
         if (!file.exists()) return emptyList()
         val now = System.currentTimeMillis()
         return file.readLines()
             .filter { it.isNotBlank() }
             .reversed()
+            .drop(skip)
+            .take(limit)
             .mapNotNull { line ->
                 val parts = line.split("\t", limit = 5)
                 if (parts.size < 5) return@mapNotNull null

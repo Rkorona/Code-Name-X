@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -169,6 +170,8 @@ fun GitHubScreen(
                         onToggle            = { viewModel.toggleRepoExpansion(repo.name) },
                         changedFiles        = viewModel.changedFiles[repo.name] ?: emptyList(),
                         commitHistory       = viewModel.commitHistory[repo.name] ?: emptyList(),
+                        hasMoreCommits      = viewModel.hasMoreCommits[repo.name] ?: false,
+                        onLoadMoreCommits   = { viewModel.loadMoreCommits(repo.name) },
                         expandedTab         = if (isExpanded) viewModel.expandedTabIndex else 0,
                         onTabSwitch         = viewModel::switchExpandedTab,
                         onToggleStaged      = { path -> viewModel.toggleFileStaged(repo.name, path) },
@@ -416,6 +419,8 @@ private fun LocalRepoCard(
     onToggle: () -> Unit,
     changedFiles: List<ChangedFile>,
     commitHistory: List<CommitRecord>,
+    hasMoreCommits: Boolean,
+    onLoadMoreCommits: () -> Unit,
     expandedTab: Int,
     onTabSwitch: (Int) -> Unit,
     onToggleStaged: (String) -> Unit,
@@ -540,6 +545,8 @@ private fun LocalRepoCard(
                 LocalRepoExpandedContent(
                     changedFiles        = changedFiles,
                     commitHistory       = commitHistory,
+                    hasMoreCommits      = hasMoreCommits,
+                    onLoadMoreCommits   = onLoadMoreCommits,
                     selectedTab         = expandedTab,
                     onTabSwitch         = onTabSwitch,
                     onToggleStaged      = onToggleStaged,
@@ -580,6 +587,8 @@ private fun StatusBadge(text: String, backgroundColor: Color, textColor: Color) 
 private fun LocalRepoExpandedContent(
     changedFiles: List<ChangedFile>,
     commitHistory: List<CommitRecord>,
+    hasMoreCommits: Boolean,
+    onLoadMoreCommits: () -> Unit,
     selectedTab: Int,
     onTabSwitch: (Int) -> Unit,
     onToggleStaged: (String) -> Unit,
@@ -685,7 +694,11 @@ private fun LocalRepoExpandedContent(
                 },
                 isCommitting = operationInProgress == "commit"
             )
-            1 -> HistoryTab(commitHistory)
+            1 -> HistoryTab(
+                commitHistory = commitHistory,
+                hasMore       = hasMoreCommits,
+                onLoadMore    = onLoadMoreCommits
+            )
         }
     }
 }
@@ -875,8 +888,26 @@ private fun ChangedFileRow(file: ChangedFile, onToggleStaged: () -> Unit) {
 // ─── 历史 Tab ──────────────────────────────────────────────────────
 
 @Composable
-private fun HistoryTab(commitHistory: List<CommitRecord>) {
+private fun HistoryTab(
+    commitHistory: List<CommitRecord>,
+    hasMore: Boolean,
+    onLoadMore: () -> Unit
+) {
     val colors = LocalGitHubColors.current
+    val listState = rememberLazyListState()
+
+    // 监听滚动到底部，自动加载更多
+    LaunchedEffect(listState, hasMore) {
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisibleItem >= totalItems - 1 && totalItems > 0
+        }.collect { shouldLoad ->
+            if (shouldLoad && hasMore) onLoadMore()
+        }
+    }
+
     if (commitHistory.isEmpty()) {
         Box(
             modifier = Modifier
@@ -889,20 +920,39 @@ private fun HistoryTab(commitHistory: List<CommitRecord>) {
         }
         return
     }
-    Column(
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.commitWrap, RoundedCornerShape(10.dp))
-            .padding(10.dp)
+            .background(colors.commitWrap, RoundedCornerShape(10.dp)),
+        state = listState
     ) {
-        commitHistory.forEachIndexed { index, commit ->
-            CommitHistoryRow(commit)
-            if (index < commitHistory.lastIndex) {
+        items(commitHistory.size) { index ->
+            if (index > 0) {
                 HorizontalDivider(
                     color    = colors.expandedBorder.copy(alpha = 0.3f),
                     thickness = 0.5.dp,
                     modifier = Modifier.padding(vertical = 2.dp, horizontal = 24.dp)
                 )
+            }
+            CommitHistoryRow(commitHistory[index])
+        }
+
+        // 加载更多指示器
+        if (hasMore) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier    = Modifier.size(20.dp),
+                        color       = colors.accentBlue,
+                        strokeWidth = 2.dp
+                    )
+                }
             }
         }
     }

@@ -104,6 +104,13 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     var commitHistory by mutableStateOf<Map<String, List<CommitRecord>>>(emptyMap())
         private set
 
+    /** repoName → 是否还有更多历史记录可加载 */
+    var hasMoreCommits by mutableStateOf<Map<String, Boolean>>(emptyMap())
+        private set
+
+    /** repoName → 当前加载中的页数（用于分页） */
+    private val commitPageCount = mutableStateMapOf<String, Int>()
+
     // ── 云端仓库 ──────────────────────────────────────────────────────
     var remoteRepos by mutableStateOf<List<RemoteRepo>>(emptyList())
         private set
@@ -296,9 +303,30 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     private fun loadCommitHistoryForRepo(repoName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val dir = findProjectDir(repoName) ?: return@launch
-            val history = GitHubFileChangeScanner.readCommits(dir)
+            // 首次加载 5 条
+            val history = GitHubFileChangeScanner.readCommits(dir, limit = 5)
             withContext(Dispatchers.Main) {
                 commitHistory = commitHistory + (repoName to history)
+                hasMoreCommits = hasMoreCommits + (repoName to history.size >= 5)
+                commitPageCount[repoName] = 1
+            }
+        }
+    }
+
+    /** 加载更多历史记录（分页） */
+    fun loadMoreCommits(repoName: String) {
+        val currentPage = commitPageCount[repoName] ?: 0
+        val pageSize = 5
+        viewModelScope.launch(Dispatchers.IO) {
+            val dir = findProjectDir(repoName) ?: return@launch
+            // 跳过已加载的条目，加载下一页
+            val skip = currentPage * pageSize
+            val moreCommits = GitHubFileChangeScanner.readCommits(dir, limit = pageSize, skip = skip)
+            withContext(Dispatchers.Main) {
+                val existing = commitHistory[repoName] ?: emptyList()
+                commitHistory = commitHistory + (repoName to existing + moreCommits)
+                hasMoreCommits = hasMoreCommits + (repoName to moreCommits.size >= pageSize)
+                commitPageCount[repoName] = currentPage + 1
             }
         }
     }
