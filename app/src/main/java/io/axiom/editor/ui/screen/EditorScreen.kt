@@ -1030,6 +1030,7 @@ fun EditorScreen(
         FileExplorerSheet(
             project = treeProject,
             onDismiss = { showFileTree = false },
+            initialFilePath = filePath,
             onOpenFile = { newFilePath ->
                 showFileTree = false
                 if (newFilePath != filePath) {

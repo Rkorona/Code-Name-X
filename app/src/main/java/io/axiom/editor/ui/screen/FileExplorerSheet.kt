@@ -363,7 +363,8 @@ private fun validateFileName(name: String): String? {
 fun FileExplorerSheet(
     project: Project,
     onDismiss: () -> Unit,
-    onOpenFile: (String) -> Unit
+    onOpenFile: (String) -> Unit,
+    initialFilePath: String = ""
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -469,9 +470,39 @@ fun FileExplorerSheet(
             }
         }
         if (result is SheetLoadState.Loaded) {
-            rootDocPath = result.root.path
-            expandedPaths = setOf(result.root.path)
+            val rootPath = result.root.path
+            rootDocPath = rootPath
             if (path.startsWith("content://")) safTreeUri = Uri.parse(path)
+
+            // 自动展开到 initialFilePath 所在目录
+            if (initialFilePath.isNotEmpty() && !path.startsWith("content://")) {
+                // 计算从 rootPath 到 initialFilePath 父目录的所有祖先路径
+                val ancestors = mutableSetOf(rootPath)
+                var cur = java.io.File(initialFilePath).parentFile
+                while (cur != null) {
+                    val abs = cur.absolutePath
+                    if (!abs.startsWith(rootPath)) break
+                    ancestors.add(abs)
+                    if (abs == rootPath) break
+                    cur = cur.parentFile
+                }
+                expandedPaths = ancestors
+
+                // 预加载每个需要展开的子目录内容（根目录的子节点已在 root.children 中）
+                val dirsToPreload = ancestors.filter { it != rootPath }
+                if (dirsToPreload.isNotEmpty()) {
+                    scope.launch(Dispatchers.IO) {
+                        val newEntries = dirsToPreload.associateWith { dirPath ->
+                            loadSheetFileChildren(dirPath)
+                        }
+                        withContext(Dispatchers.Main) {
+                            childrenCache = childrenCache + newEntries
+                        }
+                    }
+                }
+            } else {
+                expandedPaths = setOf(rootPath)
+            }
         }
         loadState = result
     }
