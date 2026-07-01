@@ -44,11 +44,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
 import kotlinx.coroutines.Dispatchers
