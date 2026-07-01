@@ -9,11 +9,18 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>CodeMirror 6</title>
+    <!--
+      color-scheme: light dark 告知 Chromium/WebView 本页面自行处理明暗主题，
+      禁止 WebView 对页面内容做算法级强制反色（forced dark / algorithmic darkening）。
+      这是在 index.html 层面的声明式修复；EditorScreen.kt 侧同样通过
+      WebViewFeature API 补充关闭，两者共同保证 CodeMirror 主题颜色不被覆盖。
+    -->
+    <meta name="color-scheme" content="light dark">
     <style>
       /* Kotlin 侧可在注入内容前调用：
          document.documentElement.style.setProperty('--editor-bg', '#fafafa')
          提前设置背景色，避免主题切换时出现闪烁帧 */
-      :root { --editor-bg: ##141729; }
+      :root { --editor-bg: #141729; }
 
       html,
       body {

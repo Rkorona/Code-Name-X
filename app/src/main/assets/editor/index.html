@@ -9,16 +9,22 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>CodeMirror 6</title>
+    <!--
+      color-scheme: light dark 告知 Chromium/WebView 本页面自行管理明暗主题，
+      禁止 WebView 对页面内容做算法级强制反色（forced dark / algorithmic darkening）。
+      EditorScreen.kt 侧同样通过 WebViewFeature API 明确关闭，两者共同保障
+      CodeMirror 所选主题（如 GitHub Dark / GitHub Light）颜色不被系统二次覆盖。
+    -->
+    <meta name="color-scheme" content="light dark">
     <style>
-      /* --editor-bg：背景色 token，Kotlin 侧调用 setTheme 时同步注入：
+      /* --editor-bg：背景色 token，Kotlin 侧调用 setTheme 时通过
+         document.documentElement.style.setProperty('--editor-bg', …) 同步：
             dark  → #141729
             light → #ffffff
-         初始值由 prefers-color-scheme 决定，供页面首帧使用，
-         避免 Kotlin bridge 就绪前出现颜色错乱 */
+         初始值为深色兜底；Kotlin bridge 就绪后会立刻覆盖为正确值。
+         注意：不再使用 prefers-color-scheme media query 做反转补偿——
+         那是对旧版强制反色的临时 hack，禁用强制反色后不再需要且会造成背景错乱。 */
       :root { --editor-bg: #141729; }
-      @media (prefers-color-scheme: dark) {
-        :root { --editor-bg: #ffffff; }
-      }
 
       html,
       body {

@@ -9,6 +9,9 @@ import android.view.MotionEvent
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import androidx.webkit.WebSettingsCompat
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.content.Context
 import android.util.Base64
@@ -868,6 +871,22 @@ fun EditorScreen(
                             allowContentAccess = true
                             allowFileAccessFromFileURLs = true
                             allowUniversalAccessFromFileURLs = true
+                        }
+
+                        // 禁用 WebView 算法级强制反色（forced dark / algorithmic darkening）。
+                        // 不禁用时，WebView 会独立读取系统深浅模式，对页面做算法色彩变换，
+                        // 与 App 的 ThemeMode 设置解耦，导致 CodeMirror 主题被二次反色
+                        // （如浅色 App + GitHub Dark 主题 → 颜色不对）。
+                        // index.html 的 <meta name="color-scheme"> 是声明式修复，
+                        // 此处 API 调用是命令式补充，两者共同保障主题颜色准确。
+                        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                            WebViewCompat.setAlgorithmicDarkeningAllowed(this, false)
+                        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                            @Suppress("DEPRECATION")
+                            WebSettingsCompat.setForceDark(
+                                settings,
+                                WebSettingsCompat.FORCE_DARK_OFF
+                            )
                         }
 
                         addJavascriptInterface(
