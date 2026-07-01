@@ -512,13 +512,13 @@ fun EditorScreen(
     }
 
     // ─────────────────────────────────────────────────────────
-    // 7. 自动保存定时器
+    // 7. 自动保存定时器（仅在文件被修改时触发）
     // ─────────────────────────────────────────────────────────
-    LaunchedEffect(settings.autoSave, settings.autoSaveInterval) {
+    LaunchedEffect(settings.autoSave, settings.autoSaveInterval, isModified) {
         if (settings.autoSave) {
             while (true) {
                 kotlinx.coroutines.delay(settings.autoSaveInterval.ms)
-                if (isEditorReady && isFileLoaded) {
+                if (isEditorReady && isFileLoaded && isModified) {
                     saveFile()
                 }
             }
