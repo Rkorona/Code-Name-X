@@ -27,6 +27,9 @@
     (function () {
         if (typeof a === 'undefined') return;
 
+        // 保存 bundle 设置的原始 o.fit() 引用，必须在覆写前保存
+        var _doRealFit = window.TerminalBridge.resizeTerminal.bind(window.TerminalBridge);
+
         // ── xterm resize 事件 → 通知 Android ──────────────
         a.onResize(function (size) {
             if (window.AndroidBridge && window.AndroidBridge.onResize) {
@@ -36,12 +39,11 @@
 
         // ── PTY 字节 → xterm ────────────────────────────
         window.writeOutput = function (b64) {
-            if (!window.TerminalBridge) return;
             try {
                 var s = atob(b64);
                 var bytes = new Uint8Array(s.length);
                 for (var i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
-                window.TerminalBridge.writeToTerminal(bytes);
+                a.write(bytes);
             } catch (e) {}
         };
 
@@ -56,17 +58,17 @@
         };
 
         // ── 带重试的 fit 调度器 ─────────────────────────
+        // _doRealFit() 调用原始 o.fit()，scheduleFit 只是触发时机控制器
         var fitScheduled = false;
         var fitAttempts  = 0;
 
         function doFit() {
             fitScheduled = false;
-            if (!window.TerminalBridge) return;
             var el = document.getElementById('terminal-container');
             if (!el) return;
-            var h = el.getBoundingClientRect().height;
-            if (h <= 0) {
-                // 容器还没尺寸，100ms 后重试
+            var rect = el.getBoundingClientRect();
+            if (rect.height <= 0 || rect.width <= 0) {
+                // 容器还没尺寸，稍后重试
                 if (fitAttempts < 30) {
                     fitAttempts++;
                     setTimeout(scheduleFit, 100);
@@ -74,7 +76,7 @@
                 return;
             }
             fitAttempts = 0;
-            window.TerminalBridge.resizeTerminal();
+            _doRealFit(); // 调用真正的 o.fit()
         }
 
         function scheduleFit() {
@@ -83,17 +85,14 @@
             requestAnimationFrame(doFit);
         }
 
-        // 公开给 Kotlin 的 resizeTerminal（覆盖 bundle 中的版本）
-        window.TerminalBridge.resizeTerminal = function () {
-            scheduleFit();
-        };
+        // 覆写 TerminalBridge.resizeTerminal，让 Kotlin 侧调用也走重试逻辑
+        window.TerminalBridge.resizeTerminal = scheduleFit;
 
-        // 页面加载完成后立即尝试一次
+        // 初始 fit（多个时间点保险触发）
         scheduleFit();
-        // 100 / 300 / 600ms 额外保险重试
         setTimeout(scheduleFit, 100);
-        setTimeout(scheduleFit, 300);
-        setTimeout(scheduleFit, 600);
+        setTimeout(scheduleFit, 400);
+        setTimeout(scheduleFit, 800);
 
         // window resize 时重新 fit
         window.addEventListener('resize', scheduleFit);
