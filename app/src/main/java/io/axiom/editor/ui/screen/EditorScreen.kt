@@ -421,6 +421,7 @@ fun EditorScreen(
                         executeJs("window.editorAPI.setContentBase64('${text.toBase64()}')")
                         executeJs("window.editorAPI.setLanguage('$targetExt')")
                         executeJs("window.editorAPI.setTheme($isDark)")
+                        executeJs("window.editorAPI.setEditorTheme('${settings.editorTheme.id}')")
                         applyEditorSettings(isDark)
                     }
                 }
@@ -437,6 +438,14 @@ fun EditorScreen(
             val bg = if (isDarkTheme) "#141729" else "#ffffff"
             executeJs("document.documentElement.style.setProperty('--editor-bg','$bg')")
             executeJs("window.editorAPI.setTheme($isDarkTheme)")
+            executeJs("window.editorAPI.setEditorTheme('${settings.editorTheme.id}')")
+        }
+    }
+
+    // 编辑器主题切换时实时同步到 WebView
+    LaunchedEffect(settings.editorTheme) {
+        if (isEditorReady) {
+            executeJs("window.editorAPI.setEditorTheme('${settings.editorTheme.id}')")
         }
     }
     
@@ -451,6 +460,7 @@ fun EditorScreen(
             executeJs("window.editorAPI.setContentBase64('${fileContent.toBase64()}')")
             executeJs("window.editorAPI.setLanguage('$fileExtension')")
             executeJs("window.editorAPI.setTheme($isDarkTheme)")
+            executeJs("window.editorAPI.setEditorTheme('${settings.editorTheme.id}')")
             applyEditorSettings(isDarkTheme)
             applyEditorFont()
             webViewRef?.postDelayed({

@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -76,6 +78,7 @@ private fun SettingsContent(
     var showAutoSaveDialog      by remember { mutableStateOf(false) }
     var showEncodingDialog      by remember { mutableStateOf(false) }
     var showTerminalThemeDialog by remember { mutableStateOf(false) }
+    var showEditorThemeDialog   by remember { mutableStateOf(false) }
     var showDefaultSortDialog   by remember { mutableStateOf(false) }
     var showFontWeightDialog    by remember { mutableStateOf(false) }
     var showClearCacheDialog    by remember { mutableStateOf(false) }
@@ -218,6 +221,14 @@ private fun SettingsContent(
                     title = "自动换行",
                     checked = s.wordWrap,
                     onCheckedChange = { viewModel.setWordWrap(it) }
+                )
+                CardDivider()
+                CardRowClickable(
+                    icon = Icons.Filled.Palette,
+                    iconBg = IconBgDefault,
+                    title = "编辑器主题",
+                    value = s.editorTheme.label,
+                    onClick = { showEditorThemeDialog = true }
                 )
                 CardDivider()
                 CardRowClickable(
@@ -492,6 +503,16 @@ private fun SettingsContent(
         )
     }
 
+    if (showEditorThemeDialog) {
+        SingleChoiceDialog(
+            title = "编辑器主题",
+            options = io.axiom.editor.data.EditorThemeMode.entries.map { it.label },
+            selectedIndex = io.axiom.editor.data.EditorThemeMode.entries.indexOf(s.editorTheme),
+            onSelect = { viewModel.setEditorTheme(io.axiom.editor.data.EditorThemeMode.entries[it]) },
+            onDismiss = { showEditorThemeDialog = false }
+        )
+    }
+
     if (showDefaultSortDialog) {
         SingleChoiceDialog(
             title = "默认排序方式",
@@ -731,7 +752,11 @@ private fun SingleChoiceDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 options.forEachIndexed { index, label ->
                     Row(
                         modifier = Modifier

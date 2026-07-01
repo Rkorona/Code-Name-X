@@ -25,6 +25,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setAutoComplete(v: Boolean)          = update(settings.copy(autoComplete = v))
     fun setShowLineNumbers(v: Boolean)       = update(settings.copy(showLineNumbers = v))
     fun setWordWrap(v: Boolean)              = update(settings.copy(wordWrap = v))
+    fun setEditorTheme(v: EditorThemeMode)   = update(settings.copy(editorTheme = v))
     fun setTabWidth(v: TabWidthMode)         = update(settings.copy(tabWidth = v))
     fun setAutoSave(v: Boolean)              = update(settings.copy(autoSave = v))
     fun setAutoSaveInterval(v: AutoSaveMode) = update(settings.copy(autoSaveInterval = v))

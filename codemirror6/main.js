@@ -34,7 +34,58 @@ import { syntaxTree, indentUnit }  from "@codemirror/language"
 import { linter, lintGutter }      from "@codemirror/lint"
 
 // ── 主题 ──────────────────────────────────────────────────────
+// 内置默认深色主题（当用户未选择具体主题、跟随 App 明暗模式时使用）
 import { oneDark }     from "@codemirror/theme-one-dark"
+
+// @uiw/codemirror-themes-all 汇总了社区常见的编辑器配色方案，
+// 全量具名导入后在 THEME_MAP 中注册，供设置页「编辑器主题」自由切换。
+import {
+  abcdef,
+  abyss,
+  androidstudio,
+  andromeda,
+  atomone,
+  aura,
+  basicLight,
+  basicDark,
+  bbedit,
+  bespin,
+  consoleLight,
+  consoleDark,
+  copilot,
+  darcula,
+  dracula,
+  duotoneLight,
+  duotoneDark,
+  eclipse,
+  githubLight,
+  githubDark,
+  gruvboxDark,
+  gruvboxLight,
+  kimbie,
+  materialLight,
+  materialDark,
+  monokai,
+  monokaiDimmed,
+  noctisLilac,
+  nord,
+  okaidia,
+  quietlight,
+  red,
+  solarizedLight,
+  solarizedDark,
+  sublime,
+  tokyoNight,
+  tokyoNightStorm,
+  tokyoNightDay,
+  tomorrowNightBlue,
+  vscodeLight,
+  vscodeDark,
+  whiteLight,
+  whiteDark,
+  xcodeLight,
+  xcodeDark,
+} from "@uiw/codemirror-themes-all"
 
 // ═════════════════════════════════════════════════════════════
 // 1. Compartments — 支持运行时动态切换，无需重建编辑器
@@ -44,6 +95,81 @@ const themeConf     = new Compartment()   // 亮/暗主题
 const inputModeConf = new Compartment()   // 键盘唤起行为
 const editableConf  = new Compartment()   // 是否可编辑
 const indentConf    = new Compartment()   // 缩进规格与 Tab 大小
+
+
+// ═════════════════════════════════════════════════════════════
+// 1.1 主题目录 — id → CM6 主题扩展
+//     id 与 Android 端 EditorThemeMode 枚举保持一致，供设置页下拉选择
+// ═════════════════════════════════════════════════════════════
+const THEME_MAP = {
+  // 特殊值：跟随 App 明暗模式（浅色为默认样式，深色为 oneDark）
+  auto: null,
+
+  oneDark,
+
+  abcdef,
+  abyss,
+  androidstudio,
+  andromeda,
+  atomone,
+  aura,
+  basicLight,
+  basicDark,
+  bbedit,
+  bespin,
+  consoleLight,
+  consoleDark,
+  copilot,
+  darcula,
+  dracula,
+  duotoneLight,
+  duotoneDark,
+  eclipse,
+  githubLight,
+  githubDark,
+  gruvboxDark,
+  gruvboxLight,
+  kimbie,
+  materialLight,
+  materialDark,
+  monokai,
+  monokaiDimmed,
+  noctisLilac,
+  nord,
+  okaidia,
+  quietlight,
+  red,
+  solarizedLight,
+  solarizedDark,
+  sublime,
+  tokyoNight,
+  tokyoNightStorm,
+  tokyoNightDay,
+  tomorrowNightBlue,
+  vscodeLight,
+  vscodeDark,
+  whiteLight,
+  whiteDark,
+  xcodeLight,
+  xcodeDark,
+}
+
+/** 当前生效的主题 id 与 App 明暗状态，用于 auto 模式回退计算 */
+let currentThemeId = "auto"
+let currentIsDark   = false
+
+/** 根据 currentThemeId / currentIsDark 计算出应生效的主题扩展 */
+function resolveThemeExtension() {
+  if (currentThemeId === "auto" || !(currentThemeId in THEME_MAP)) {
+    return currentIsDark ? oneDark : []
+  }
+  return THEME_MAP[currentThemeId] || []
+}
+
+/** 将计算出的主题应用到编辑器 Compartment */
+function applyResolvedTheme() {
+  view.dispatch({ effects: themeConf.reconfigure(resolveThemeExtension()) })
+}
 
 
 // ═════════════════════════════════════════════════════════════
@@ -216,6 +342,9 @@ function detectIndentation(text) {
 // ═════════════════════════════════════════════════════════════
 const container = document.getElementById("editor")
 
+// 初始明暗状态：跟随系统偏好，供 auto 主题回退计算
+currentIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+
 const view = new EditorView({
   state: EditorState.create({
     doc: "",
@@ -227,7 +356,7 @@ const view = new EditorView({
 
       // ── 动态 Compartment 初始值 ──
       languageConf.of(getLang("js")),
-      themeConf.of(window.matchMedia('(prefers-color-scheme: dark)').matches ? oneDark : []),
+      themeConf.of(resolveThemeExtension()),
       inputModeConf.of(ATTR_NO_KEYBOARD),
       editableConf.of(EditorView.editable.of(true)),
       indentConf.of([indentUnit.of("    "), EditorState.tabSize.of(4)]), // 默认4空格对齐
@@ -343,10 +472,28 @@ window.editorAPI = {
     view.dispatch({ effects: languageConf.reconfigure(getLang(ext)) })
   },
 
+  /**
+   * 兼容旧接口：仅切换 App 明暗态。
+   * 若当前主题为具体主题（非 auto），主题本身不受影响，
+   * 只有背景色变量与 auto 回退色会更新。
+   */
   setTheme: (dark) => {
-    view.dispatch({ effects: themeConf.reconfigure(dark ? oneDark : []) })
+    currentIsDark = !!dark
+    applyResolvedTheme()
     document.documentElement.style.setProperty('--editor-bg', dark ? '#141729' : '#ffffff')
   },
+
+  /**
+   * 自由切换编辑器配色主题
+   * @param {string} themeId 主题 id，取值见 THEME_MAP（"auto" 表示跟随 App 明暗模式）
+   */
+  setEditorTheme: (themeId) => {
+    currentThemeId = (themeId && themeId in THEME_MAP) ? themeId : "auto"
+    applyResolvedTheme()
+  },
+
+  /** 返回当前可选的主题 id 列表，便于 Android 端做校验 / 调试 */
+  getEditorThemes: () => Object.keys(THEME_MAP),
 
 
   // ── 键盘 / IME 控制 ─────────────────────────────────────────
