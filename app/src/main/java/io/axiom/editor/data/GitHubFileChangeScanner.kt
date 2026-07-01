@@ -68,6 +68,15 @@ object GitHubFileChangeScanner {
     /** 还原后重置快照 */
     fun resetIndex(projectDir: File) = writeIndex(projectDir)
 
+    /** 放弃单个文件时从 AXIOM_INDEX 中移除该路径（用于 ADDED 文件被删除后） */
+    fun removeFromIndex(projectDir: File, filePath: String) {
+        val indexFile = File(projectDir, ".git/$INDEX_FILE")
+        if (!indexFile.exists()) return
+        val existing = readIndexMap(indexFile).toMutableMap()
+        existing.remove(filePath)
+        indexFile.writeText(indexMapToText(existing))
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // 变更扫描
     // ═══════════════════════════════════════════════════════════════════
@@ -295,7 +304,7 @@ object GitHubFileChangeScanner {
     ): List<DiffLine> {
         val n = remoteLines.size
         val m = localLines.size
-        if (n > 600 || m > 600) return emptyList()
+        if (n > 2000 || m > 2000) return emptyList()
 
         // LCS DP
         val dp = Array(n + 1) { IntArray(m + 1) }

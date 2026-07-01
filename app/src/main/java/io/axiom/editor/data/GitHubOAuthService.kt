@@ -393,6 +393,19 @@ object GitHubOAuthService {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 分支列表
+    // ═══════════════════════════════════════════════════════════════════
+
+    fun getBranches(token: String, fullName: String): List<String> {
+        val conn = apiGet(token, "https://api.github.com/repos/$fullName/branches?per_page=100")
+        if (conn.responseCode != 200) return emptyList()
+        return try {
+            val array = JSONArray(conn.inputStream.bufferedReader().readText())
+            (0 until array.length()).map { i -> array.getJSONObject(i).getString("name") }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // HTTP 工具
     // ═══════════════════════════════════════════════════════════════════
 

@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,12 +40,15 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ExitToApp
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -168,6 +173,7 @@ fun GitHubScreen(
                         isExpanded          = isExpanded,
                         isRefreshing        = viewModel.isRefreshingRemoteRefs,
                         onToggle            = { viewModel.toggleRepoExpansion(repo.name) },
+                        onBranchClick       = { viewModel.showBranchPicker(repo.name) },
                         changedFiles        = viewModel.changedFiles[repo.name] ?: emptyList(),
                         commitHistory       = viewModel.commitHistory[repo.name] ?: emptyList(),
                         hasMoreCommits      = viewModel.hasMoreCommits[repo.name] ?: false,
@@ -177,6 +183,8 @@ fun GitHubScreen(
                         onToggleStaged      = { path -> viewModel.toggleFileStaged(repo.name, path) },
                         onStageAll          = { viewModel.stageAll(repo.name) },
                         onUnstageAll        = { viewModel.unstageAll(repo.name) },
+                        onViewFileDiff      = { file -> viewModel.showFileDiff(repo.name, file) },
+                        onDiscardFile       = { path -> viewModel.discardFile(repo.name, path) },
                         onFetch             = { viewModel.fetchRepo(repo.name) },
                         onPull              = { viewModel.pullRepo(repo.name, context) },
                         onPush              = { msg -> viewModel.pushRepo(repo.name, msg) },
@@ -258,6 +266,24 @@ fun GitHubScreen(
                     conflict       = conflict,
                     onForcePush    = { viewModel.confirmForcePush() },
                     onDismiss      = { viewModel.dismissPushConflict() }
+                )
+            }
+
+            viewModel.fileDiffState?.let { diffState ->
+                FileDiffSheet(
+                    diffState = diffState,
+                    onDismiss = { viewModel.dismissFileDiff() }
+                )
+            }
+
+            viewModel.branchPickerRepo?.let { repoName ->
+                val currentBranch = viewModel.localRepos.find { it.name == repoName }?.branch ?: ""
+                BranchPickerSheet(
+                    repoName      = repoName,
+                    currentBranch = currentBranch,
+                    branches      = viewModel.repoBranches[repoName] ?: emptyList(),
+                    onSelect      = { branch -> viewModel.switchBranch(repoName, branch) },
+                    onDismiss     = { viewModel.dismissBranchPicker() }
                 )
             }
 
@@ -417,6 +443,7 @@ private fun LocalRepoCard(
     isExpanded: Boolean,
     isRefreshing: Boolean,
     onToggle: () -> Unit,
+    onBranchClick: () -> Unit,
     changedFiles: List<ChangedFile>,
     commitHistory: List<CommitRecord>,
     hasMoreCommits: Boolean,
@@ -426,6 +453,8 @@ private fun LocalRepoCard(
     onToggleStaged: (String) -> Unit,
     onStageAll: () -> Unit,
     onUnstageAll: () -> Unit,
+    onViewFileDiff: (ChangedFile) -> Unit,
+    onDiscardFile: (String) -> Unit,
     onFetch: () -> Unit,
     onPull: () -> Unit,
     onPush: (String) -> Unit,
@@ -472,7 +501,12 @@ private fun LocalRepoCard(
                             color      = colors.textPrimary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable(onClick = onBranchClick)
+                                .padding(vertical = 2.dp, horizontal = 2.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.CallSplit,
                                 contentDescription = null,
@@ -484,6 +518,13 @@ private fun LocalRepoCard(
                                 text     = repo.branch,
                                 fontSize = 12.sp,
                                 color    = colors.textSecondary
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = "切换分支",
+                                tint     = colors.textMuted,
+                                modifier = Modifier.size(12.dp)
                             )
                         }
                     }
@@ -552,6 +593,8 @@ private fun LocalRepoCard(
                     onToggleStaged      = onToggleStaged,
                     onStageAll          = onStageAll,
                     onUnstageAll        = onUnstageAll,
+                    onViewFileDiff      = onViewFileDiff,
+                    onDiscardFile       = onDiscardFile,
                     onFetch             = onFetch,
                     onPull              = onPull,
                     onPush              = onPush,
@@ -594,6 +637,8 @@ private fun LocalRepoExpandedContent(
     onToggleStaged: (String) -> Unit,
     onStageAll: () -> Unit,
     onUnstageAll: () -> Unit,
+    onViewFileDiff: (ChangedFile) -> Unit,
+    onDiscardFile: (String) -> Unit,
     onFetch: () -> Unit,
     onPull: () -> Unit,
     onPush: (String) -> Unit,
@@ -681,11 +726,13 @@ private fun LocalRepoExpandedContent(
         // ── Tab 内容 ────────────────────────────────────────────────
         when (selectedTab) {
             0 -> ChangesTab(
-                changedFiles  = changedFiles,
-                onToggleStaged = onToggleStaged,
-                onStageAll    = onStageAll,
-                onUnstageAll  = onUnstageAll,
-                commitMessage = commitMessage,
+                changedFiles    = changedFiles,
+                onToggleStaged  = onToggleStaged,
+                onStageAll      = onStageAll,
+                onUnstageAll    = onUnstageAll,
+                onViewFileDiff  = onViewFileDiff,
+                onDiscardFile   = onDiscardFile,
+                commitMessage   = commitMessage,
                 onMessageChange = { commitMessage = it },
                 onCommit = {
                     val msg = commitMessage
@@ -753,6 +800,8 @@ private fun ChangesTab(
     onToggleStaged: (String) -> Unit,
     onStageAll: () -> Unit,
     onUnstageAll: () -> Unit,
+    onViewFileDiff: (ChangedFile) -> Unit,
+    onDiscardFile: (String) -> Unit,
     commitMessage: String,
     onMessageChange: (String) -> Unit,
     onCommit: () -> Unit,
@@ -792,7 +841,12 @@ private fun ChangesTab(
             }
             Spacer(modifier = Modifier.height(6.dp))
             changedFiles.forEach { file ->
-                ChangedFileRow(file = file, onToggleStaged = { onToggleStaged(file.path) })
+                ChangedFileRow(
+                    file           = file,
+                    onToggleStaged = { onToggleStaged(file.path) },
+                    onViewDiff     = { onViewFileDiff(file) },
+                    onDiscard      = { onDiscardFile(file.path) }
+                )
             }
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(
@@ -813,7 +867,12 @@ private fun ChangesTab(
 }
 
 @Composable
-private fun ChangedFileRow(file: ChangedFile, onToggleStaged: () -> Unit) {
+private fun ChangedFileRow(
+    file: ChangedFile,
+    onToggleStaged: () -> Unit,
+    onViewDiff: () -> Unit,
+    onDiscard: () -> Unit
+) {
     val colors      = LocalGitHubColors.current
     val statusColor = when (file.status) {
         FileChangeStatus.MODIFIED  -> Color(0xFFE08A3C)
@@ -881,6 +940,22 @@ private fun ChangedFileRow(file: ChangedFile, onToggleStaged: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+        IconButton(onClick = onViewDiff, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector        = Icons.Rounded.Visibility,
+                contentDescription = "查看差异",
+                tint               = colors.textMuted,
+                modifier           = Modifier.size(15.dp)
+            )
+        }
+        IconButton(onClick = onDiscard, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector        = Icons.Rounded.Restore,
+                contentDescription = "放弃更改",
+                tint               = colors.accentRed,
+                modifier           = Modifier.size(15.dp)
+            )
         }
     }
 }
@@ -1683,6 +1758,259 @@ private fun ConflictFileDiffRow(
             ) {
                 diffLines.forEach { line ->
                     DiffLineRow(line = line, colors = colors)
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 文件 Diff 预览 Sheet
+// ═══════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FileDiffSheet(
+    diffState: FileDiffState,
+    onDismiss: () -> Unit
+) {
+    val colors     = LocalGitHubColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest   = onDismiss,
+        sheetState         = sheetState,
+        containerColor     = colors.cardExpanded,
+        dragHandle         = null
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+            // ── 标题栏 ─────────────────────────────────────────────
+            Row(
+                modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    val statusColor = when (diffState.status) {
+                        FileChangeStatus.MODIFIED  -> Color(0xFFE08A3C)
+                        FileChangeStatus.ADDED     -> colors.accentGreen
+                        FileChangeStatus.DELETED   -> colors.accentRed
+                        FileChangeStatus.RENAMED   -> colors.accentBlue
+                        FileChangeStatus.UNTRACKED -> colors.textMuted
+                    }
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text       = diffState.status.label,
+                            fontSize   = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color      = statusColor,
+                            modifier   = Modifier
+                                .background(statusColor.copy(alpha = 0.15f), RoundedCornerShape(3.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                        Text(
+                            text       = diffState.filePath.substringAfterLast("/"),
+                            fontSize   = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = colors.textPrimary,
+                            maxLines   = 1,
+                            overflow   = TextOverflow.Ellipsis
+                        )
+                    }
+                    val dir = diffState.filePath.substringBeforeLast("/", "")
+                    if (dir.isNotEmpty()) {
+                        Text(
+                            text     = dir,
+                            fontSize = 11.sp,
+                            color    = colors.textMuted,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Rounded.Close, "关闭", tint = colors.textMuted)
+                }
+            }
+            HorizontalDivider(color = colors.expandedBorder.copy(alpha = 0.4f), thickness = 0.5.dp)
+
+            // ── 内容 ──────────────────────────────────────────────
+            when {
+                diffState.isLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(
+                                modifier    = Modifier.size(28.dp),
+                                color       = colors.accentBlue,
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("正在加载差异…", fontSize = 13.sp, color = colors.textMuted)
+                        }
+                    }
+                }
+                diffState.error != null -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text     = diffState.error,
+                            fontSize = 13.sp,
+                            color    = colors.accentRed,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+                diffState.diffLines.isEmpty() -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("文件无变更或内容过大", fontSize = 13.sp, color = colors.textMuted)
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 560.dp)
+                            .background(Color(0xFF0D0D0D))
+                    ) {
+                        items(diffState.diffLines.size) { i ->
+                            DiffLineRow(line = diffState.diffLines[i], colors = colors)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 分支选择 Sheet
+// ═══════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BranchPickerSheet(
+    repoName: String,
+    currentBranch: String,
+    branches: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors     = LocalGitHubColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest   = onDismiss,
+        sheetState         = sheetState,
+        containerColor     = colors.cardExpanded,
+        dragHandle         = null
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+            // ── 标题栏 ─────────────────────────────────────────────
+            Row(
+                modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text       = "切换分支",
+                        fontSize   = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color      = colors.textPrimary
+                    )
+                    Text(
+                        text     = repoName,
+                        fontSize = 12.sp,
+                        color    = colors.textMuted
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Rounded.Close, "关闭", tint = colors.textMuted)
+                }
+            }
+            HorizontalDivider(color = colors.expandedBorder.copy(alpha = 0.4f), thickness = 0.5.dp)
+
+            // ── 分支列表 ───────────────────────────────────────────
+            if (branches.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            modifier    = Modifier.size(24.dp),
+                            color       = colors.accentBlue,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("正在加载分支…", fontSize = 13.sp, color = colors.textMuted)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .padding(vertical = 8.dp)
+                ) {
+                    items(branches.size) { i ->
+                        val branch = branches[i]
+                        val isCurrent = branch == currentBranch
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isCurrent) { onSelect(branch) }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment     = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CallSplit,
+                                    contentDescription = null,
+                                    tint     = if (isCurrent) colors.accentBlue else colors.textMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text       = branch,
+                                    fontSize   = 14.sp,
+                                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                    color      = if (isCurrent) colors.accentBlue else colors.textPrimary
+                                )
+                            }
+                            if (isCurrent) {
+                                Text(
+                                    text       = "当前",
+                                    fontSize   = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color      = colors.accentBlue,
+                                    modifier   = Modifier
+                                        .background(colors.accentBlueAlpha, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        if (i < branches.size - 1) {
+                            HorizontalDivider(
+                                color     = colors.expandedBorder.copy(alpha = 0.2f),
+                                thickness = 0.5.dp,
+                                modifier  = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

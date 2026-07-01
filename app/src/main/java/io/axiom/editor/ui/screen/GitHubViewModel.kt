@@ -19,6 +19,7 @@ import io.axiom.editor.data.GitHubStore
 import io.axiom.editor.data.ProjectRepository
 import io.axiom.editor.ui.model.ChangedFile
 import io.axiom.editor.ui.model.CommitRecord
+import io.axiom.editor.ui.model.FileChangeStatus
 import io.axiom.editor.ui.model.LocalRepo
 import io.axiom.editor.ui.model.Project
 import io.axiom.editor.ui.model.ProjectType
@@ -44,6 +45,15 @@ data class PushConflictState(
     val conflictFiles: List<String>,
     /** 各冲突文件的逐行 diff（key = 相对路径，value = DiffLine 列表） */
     val fileDiffs: Map<String, List<io.axiom.editor.data.DiffLine>> = emptyMap()
+)
+
+data class FileDiffState(
+    val repoName: String,
+    val filePath: String,
+    val status: FileChangeStatus,
+    val diffLines: List<io.axiom.editor.data.DiffLine> = emptyList(),
+    val isLoading: Boolean = true,
+    val error: String? = null
 )
 
 class GitHubViewModel(application: Application) : AndroidViewModel(application) {
@@ -127,6 +137,19 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
     // ── Push 冲突检测 ─────────────────────────────────────────────────
     /** 非 null 时显示冲突确认弹窗 */
     var pushConflictState by mutableStateOf<PushConflictState?>(null)
+        private set
+
+    // ── 文件 Diff 预览 ────────────────────────────────────────────────
+    var fileDiffState by mutableStateOf<FileDiffState?>(null)
+        private set
+
+    // ── 分支管理 ──────────────────────────────────────────────────────
+    /** repoName → 该仓库的远端分支列表 */
+    var repoBranches by mutableStateOf<Map<String, List<String>>>(emptyMap())
+        private set
+
+    /** 非 null 时显示分支选择弹窗，值为正在切换的仓库名 */
+    var branchPickerRepo by mutableStateOf<String?>(null)
         private set
 
     // ── 每个仓库的独立操作状态 ────────────────────────────────────────
@@ -1002,5 +1025,196 @@ class GitHubViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateSearchQuery(query: String) {
         searchQuery = query
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 文件 Diff 预览
+    // ═══════════════════════════════════════════════════════════════════
+
+    fun showFileDiff(repoName: String, file: ChangedFile) {
+        fileDiffState = FileDiffState(repoName, file.path, file.status, isLoading = true)
+        val token = accessToken
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dir = findProjectDir(repoName)
+                if (dir == null) {
+                    withContext(Dispatchers.Main) {
+                        fileDiffState = fileDiffState?.copy(isLoading = false, error = "找不到项目目录")
+                    }
+                    return@launch
+                }
+                val localFile = File(dir, file.path)
+                val localLines = if (localFile.exists()) localFile.readLines() else emptyList()
+                val diffLines: List<io.axiom.editor.data.DiffLine> = when (file.status) {
+                    FileChangeStatus.ADDED, FileChangeStatus.UNTRACKED ->
+                        localLines.mapIndexed { i, line ->
+                            io.axiom.editor.data.DiffLine(io.axiom.editor.data.DiffType.ADDED, i + 1, line)
+                        }
+                    FileChangeStatus.DELETED -> {
+                        val fullName = readRemoteFullName(dir)
+                        val branch = localRepos.find { it.name == repoName }?.branch ?: "main"
+                        val bytes = if (fullName != null && token.isNotEmpty())
+                            GitHubOAuthService.downloadRemoteFileBytes(token, fullName, file.path, branch)
+                        else null
+                        (bytes?.toString(Charsets.UTF_8)?.lines() ?: emptyList())
+                            .mapIndexed { i, line ->
+                                io.axiom.editor.data.DiffLine(io.axiom.editor.data.DiffType.REMOVED, i + 1, line)
+                            }
+                    }
+                    else -> {
+                        val fullName = readRemoteFullName(dir)
+                        val branch = localRepos.find { it.name == repoName }?.branch ?: "main"
+                        val bytes = if (fullName != null && token.isNotEmpty())
+                            GitHubOAuthService.downloadRemoteFileBytes(token, fullName, file.path, branch)
+                        else null
+                        val remoteLines = bytes?.toString(Charsets.UTF_8)?.lines() ?: emptyList()
+                        GitHubFileChangeScanner.computeDiff(remoteLines, localLines)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    fileDiffState = fileDiffState?.copy(diffLines = diffLines, isLoading = false)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    fileDiffState = fileDiffState?.copy(isLoading = false, error = e.message ?: "加载失败")
+                }
+            }
+        }
+    }
+
+    fun dismissFileDiff() {
+        fileDiffState = null
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 放弃单个文件更改
+    // ═══════════════════════════════════════════════════════════════════
+
+    fun discardFile(repoName: String, filePath: String) {
+        val token = accessToken
+        val files = changedFiles[repoName] ?: return
+        val file = files.find { it.path == filePath } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dir = findProjectDir(repoName) ?: return@launch
+                val localFile = File(dir, filePath)
+                when (file.status) {
+                    FileChangeStatus.ADDED, FileChangeStatus.UNTRACKED -> {
+                        localFile.delete()
+                        GitHubFileChangeScanner.removeFromIndex(dir, filePath)
+                    }
+                    else -> {
+                        val fullName = readRemoteFullName(dir)
+                        if (fullName == null) {
+                            withContext(Dispatchers.Main) {
+                                setRepoMsg(repoName, "无法读取远端地址，无法还原文件", true)
+                            }
+                            return@launch
+                        }
+                        val branch = localRepos.find { it.name == repoName }?.branch ?: "main"
+                        val bytes = GitHubOAuthService.downloadRemoteFileBytes(token, fullName, filePath, branch)
+                        if (bytes != null) {
+                            localFile.parentFile?.mkdirs()
+                            localFile.writeBytes(bytes)
+                            GitHubFileChangeScanner.updateIndexForStagedFiles(dir, setOf(filePath))
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                setRepoMsg(repoName, "文件在远端不存在，无法还原", true)
+                            }
+                            return@launch
+                        }
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    refreshChangedFilesForRepo(repoName)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    setRepoMsg(repoName, "放弃更改失败：${e.message ?: "未知错误"}", true)
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 分支管理
+    // ═══════════════════════════════════════════════════════════════════
+
+    fun showBranchPicker(repoName: String) {
+        branchPickerRepo = repoName
+        val token = accessToken
+        if (token.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dir = findProjectDir(repoName) ?: return@launch
+                val fullName = readRemoteFullName(dir) ?: return@launch
+                val branches = GitHubOAuthService.getBranches(token, fullName)
+                withContext(Dispatchers.Main) {
+                    repoBranches = repoBranches + (repoName to branches)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun dismissBranchPicker() {
+        branchPickerRepo = null
+    }
+
+    fun switchBranch(repoName: String, newBranch: String) {
+        val currentBranch = localRepos.find { it.name == repoName }?.branch ?: return
+        if (newBranch == currentBranch) { branchPickerRepo = null; return }
+        val token = accessToken
+        if (token.isEmpty()) return
+        branchPickerRepo = null
+        viewModelScope.launch {
+            setRepoOp(repoName, "switch")
+            try {
+                val dir = withContext(Dispatchers.IO) { findProjectDir(repoName) }
+                if (dir == null) { setRepoMsg(repoName, "找不到本地仓库目录", true); return@launch }
+                val fullName = withContext(Dispatchers.IO) { readRemoteFullName(dir) }
+                if (fullName == null) { setRepoMsg(repoName, "无法读取远端仓库地址", true); return@launch }
+
+                withContext(Dispatchers.IO) {
+                    val tempDir = File(dir.parentFile, "${dir.name}__sw_${System.currentTimeMillis()}")
+                    tempDir.mkdirs()
+                    try {
+                        val latestSha = GitHubOAuthService.getLatestCommitSha(token, fullName, newBranch)
+                        GitHubOAuthService.downloadAndExtractRepo(token, fullName, newBranch, tempDir) {}
+                        dir.listFiles()?.forEach { f -> if (f.name != ".git") f.deleteRecursively() }
+                        tempDir.listFiles()?.forEach { f -> f.renameTo(File(dir, f.name)) }
+                        File(dir, ".git/HEAD").writeText("ref: refs/heads/$newBranch\n")
+                        File(dir, ".git/refs/heads/$newBranch").apply { parentFile?.mkdirs() }
+                            .writeText("$latestSha\n")
+                        File(dir, ".git/refs/remotes/origin/$newBranch").apply { parentFile?.mkdirs() }
+                            .writeText("$latestSha\n")
+                        GitHubFileChangeScanner.writeIndex(dir)
+                        try {
+                            val remoteCommits = GitHubOAuthService.getRecentCommits(
+                                token, fullName, newBranch, perPage = 30
+                            )
+                            if (remoteCommits.isNotEmpty())
+                                GitHubFileChangeScanner.writeRawCommitLines(
+                                    dir, remoteCommitsToRawLines(remoteCommits)
+                                )
+                        } catch (_: Exception) {}
+                    } finally {
+                        tempDir.deleteRecursively()
+                    }
+                }
+
+                val scanned = withContext(Dispatchers.IO) { GitHubRepoScanner.scan(getApplication()) }
+                localRepos = scanned
+                changedFiles = changedFiles + (repoName to emptyList())
+                commitHistory = commitHistory - repoName
+                commitPageCount.remove(repoName)
+                hasMoreCommits = hasMoreCommits - repoName
+                loadCommitHistoryForRepo(repoName)
+                setRepoMsg(repoName, "已切换到分支 $newBranch ✓", false)
+            } catch (e: Exception) {
+                setRepoMsg(repoName, "切换分支失败：${e.message ?: "网络错误"}", true)
+            } finally {
+                setRepoOp(repoName, null)
+            }
+        }
     }
 }
