@@ -24,6 +24,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,11 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-
-import dev.vicart.compose.material.symbols.FilledSymbol
-import dev.vicart.compose.material.symbols.MaterialSymbols
-
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -621,10 +621,10 @@ fun EditorScreen(
                                 }
                             }
                             if (canShowFileDropdown && siblingFiles.size > 1) {
-                                FilledSymbol(
-                                    icon = MaterialSymbols.ARROW_DROP_DOWN,
-                                    weight = FontWeight.Normal,
-                                    size = 24.dp,
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowDropDown,
+                                    contentDescription = "切换文件",
+                                    modifier = Modifier.size(18.dp),
                                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )
                             }
@@ -663,19 +663,17 @@ fun EditorScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        FilledSymbol(
-                            icon = MaterialSymbols.ARROW_BACK,
-                            weight = FontWeight.Normal,
-                            size = 24.dp
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
                         )
                     }
                 },
                 actions = {
                     IconButton(onClick = { /* TODO: 菜单 */ }) {
-                        FilledSymbol(
-                            icon = MaterialSymbols.MORE_VERT,
-                            weight = FontWeight.Normal,
-                            size = 24.dp,
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "菜单",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -748,11 +746,11 @@ fun EditorScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
-                                    FilledSymbol(
-                                        icon = MaterialSymbols.CANCEL,
-                                        weight = FontWeight.Normal,
-                                        size = 24.dp,
-                                        tint = MaterialTheme.colorScheme.error
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = "Errors",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(11.dp)
                                     )
                                     StatusBarLabel("$errorCount", color = MaterialTheme.colorScheme.error)
                                 }
@@ -762,11 +760,11 @@ fun EditorScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
-                                    FilledSymbol(
-                                        icon = MaterialSymbols.WARNING,
-                                        weight = FontWeight.Normal,
-                                        size = 24.dp,
-                                        tint = Color(0xFFF5A623)
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Warnings",
+                                        tint = Color(0xFFF5A623),
+                                        modifier = Modifier.size(11.dp)
                                     )
                                     StatusBarLabel("$warningCount", color = Color(0xFFF5A623))
                                 }
@@ -791,11 +789,11 @@ fun EditorScreen(
                                 StatusBarLabel(fileEncoding)
 
                                 // 历史/同步图标
-                                FilledSymbol(
-                                    icon = MaterialSymbols.REFRESH,
-                                    weight = FontWeight.Normal,
-                                    size = 24.dp,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "History",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(11.dp)
                                 )
                             }
                         }
@@ -1102,10 +1100,10 @@ private fun EditorTabStrip(
                                 .clickable { onTabClose(index) },
                             contentAlignment = Alignment.Center
                         ) {
-                            FilledSymbol(
-                                icon = MaterialSymbols.CLOSE,
-                                weight = FontWeight.Normal,
-                                size = 24.dp,
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭选项卡",
+                                modifier = Modifier.size(10.dp),
                                 tint = if (isActive) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                             )
@@ -1183,22 +1181,22 @@ fun QuickActionButtonBar(
         ) {
             // ── 方向键组 ─────────────────────────────────────────────────────
             EditorArrowKey(
-                icon = MaterialSymbols.KEYBOARD_ARROW_LEFT,
+                icon = Icons.Default.KeyboardArrowLeft,
                 description = "向左",
                 onClick = { onMoveCursor("left") }
             )
             EditorArrowKey(
-                icon = MaterialSymbols.KEYBOARD_ARROW_UP,
+                icon = Icons.Default.KeyboardArrowUp,
                 description = "向上",
                 onClick = { onMoveCursor("up") }
             )
             EditorArrowKey(
-                icon = MaterialSymbols.KEYBOARD_ARROW_DOWN,
+                icon = Icons.Default.KeyboardArrowDown,
                 description = "向下",
                 onClick = { onMoveCursor("down") }
             )
             EditorArrowKey(
-                icon = MaterialSymbols.KEYBOARD_ARROW_RIGHT,
+                icon = Icons.Default.KeyboardArrowRight,
                 description = "向右",
                 onClick = { onMoveCursor("right") }
             )
@@ -1283,10 +1281,10 @@ private fun EditorActionsBar(
         ) {
             // ── 左侧：启动图标（占位符）──
             IconButton(onClick = { /* TODO: 启动 */ }) {
-                FilledSymbol(
-                    icon = MaterialSymbols.PLAY_ARROW,
-                    weight = FontWeight.Normal,
-                    size = 24.dp,
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "启动",
+                    modifier = Modifier.size(22.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1303,34 +1301,34 @@ private fun EditorActionsBar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { /* TODO */ }) {
-                        FilledSymbol(
-                            icon = MaterialSymbols.DESKTOP_WINDOWS,
-                            weight = FontWeight.Normal,
-                            size = 24.dp,
+                        Icon(
+                            imageVector = Icons.Default.DesktopWindows,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = { /* TODO */ }) {
-                        FilledSymbol(
-                            icon = MaterialSymbols.EXTENSION,
-                            weight = FontWeight.Normal,
-                            size = 24.dp,
+                        Icon(
+                            imageVector = Icons.Default.Extension,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = { /* TODO */ }) {
-                        FilledSymbol(
-                            icon = MaterialSymbols.PUBLIC,
-                            weight = FontWeight.Normal,
-                            size = 24.dp,
+                        Icon(
+                            imageVector = Icons.Default.Public,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = { /* TODO */ }) {
-                        FilledSymbol(
-                            icon = MaterialSymbols.HUB,
-                            weight = FontWeight.Normal,
-                            size = 24.dp,
+                        Icon(
+                            imageVector = Icons.Default.Hub,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -1341,11 +1339,11 @@ private fun EditorActionsBar(
 
             // ── 右侧：软键盘 + 文件树 ──
             IconButton(onClick = onToggleKeyboard) {
-                FilledSymbol(
-                    icon = if (isKeyboardEnabled)
-                        MaterialSymbols.KEYBOARD_HIDE else MaterialSymbols.KEYBOARD,
-                    weight = FontWeight.Normal,
-                    size = 24.dp,
+                Icon(
+                    imageVector = if (isKeyboardEnabled)
+                        Icons.Default.KeyboardHide else Icons.Default.Keyboard,
+                    contentDescription = "软键盘",
+                    modifier = Modifier.size(22.dp),
                     tint = if (isKeyboardEnabled)
                         MaterialTheme.colorScheme.primary
                     else
@@ -1354,10 +1352,10 @@ private fun EditorActionsBar(
             }
             if (hasFileTree) {
                 IconButton(onClick = onOpenFileTree) {
-                    FilledSymbol(
-                        icon = MaterialSymbols.ACCOUNT_TREE,
-                        weight = FontWeight.Normal,
-                        size = 24.dp,
+                    Icon(
+                        imageVector = Icons.Default.AccountTree,
+                        contentDescription = "文件树",
+                        modifier = Modifier.size(22.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -1397,7 +1395,7 @@ private fun EditorKeyButton(
 /** 方向键（带图标的固定尺寸键帽） */
 @Composable
 private fun EditorArrowKey(
-    icon: String,
+    icon: ImageVector,
     description: String,
     onClick: () -> Unit
 ) {
@@ -1405,10 +1403,10 @@ private fun EditorArrowKey(
         onClick = onClick,
         modifier = Modifier.size(38.dp)
     ) {
-        FilledSymbol(
-            icon = icon,
-            weight = FontWeight.Normal,
-            size = 24.dp,
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
