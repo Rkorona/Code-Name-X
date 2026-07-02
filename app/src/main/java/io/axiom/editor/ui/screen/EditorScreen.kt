@@ -186,6 +186,11 @@ fun EditorScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // factory lambda 只执行一次，会捕获旧的 filePath String 值（stale closure）。
+    // 用 MutableState + SideEffect 让 factory 内的闭包每次都能读到最新的 filePath。
+    val filePathRef = remember { mutableStateOf(filePath) }
+    SideEffect { filePathRef.value = filePath }
+
     // 退出确认弹窗状态
     var showExitDialog by remember { mutableStateOf(false) }
     // 等待关闭确认的选项卡索引（null 表示无待确认）
@@ -1003,8 +1008,9 @@ fun EditorScreen(
                                         // 用户编辑才标记为已修改（程序注入时 suppressMod=true）
                                         if (!suppressMod.get() && isFileLoaded && isEditorReady) {
                                             isModified = true
-                                            if (filePath.isNotEmpty()) {
-                                                modifiedFilePaths = modifiedFilePaths + filePath
+                                            val currentPath = filePathRef.value
+                                            if (currentPath.isNotEmpty()) {
+                                                modifiedFilePaths = modifiedFilePaths + currentPath
                                             }
                                         }
                                     }
