@@ -1279,20 +1279,14 @@ private fun EditorActionsBar(
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ── 左侧：启动图标（带底座）──
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp),
-                shape = RoundedCornerShape(10.dp),
-                tonalElevation = 0.dp
-            ) {
-                IconButton(onClick = { /* TODO: 启动 */ }) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "启动",
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            // ── 左侧：启动图标（占位符）──
+            IconButton(onClick = { /* TODO: 启动 */ }) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "启动",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -1303,7 +1297,9 @@ private fun EditorActionsBar(
                 shape = RoundedCornerShape(10.dp),
                 tonalElevation = 0.dp
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     IconButton(onClick = { /* TODO */ }) {
                         Icon(
                             imageVector = Icons.Default.DesktopWindows,
@@ -1341,35 +1337,27 @@ private fun EditorActionsBar(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // ── 右侧：软键盘 + 文件树（带底座）──
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp),
-                shape = RoundedCornerShape(10.dp),
-                tonalElevation = 0.dp
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onToggleKeyboard) {
-                        Icon(
-                            imageVector = if (isKeyboardEnabled)
-                                Icons.Default.KeyboardHide else Icons.Default.Keyboard,
-                            contentDescription = "软键盘",
-                            modifier = Modifier.size(24.dp),
-                            tint = if (isKeyboardEnabled)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (hasFileTree) {
-                        IconButton(onClick = onOpenFileTree) {
-                            Icon(
-                                imageVector = Icons.Default.Lan,
-                                contentDescription = "文件树",
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+            // ── 右侧：软键盘 + 文件树 ──
+            IconButton(onClick = onToggleKeyboard) {
+                Icon(
+                    imageVector = if (isKeyboardEnabled)
+                        Icons.Default.KeyboardHide else Icons.Default.Keyboard,
+                    contentDescription = "软键盘",
+                    modifier = Modifier.size(24.dp),
+                    tint = if (isKeyboardEnabled)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (hasFileTree) {
+                IconButton(onClick = onOpenFileTree) {
+                    Icon(
+                        imageVector = Icons.Default.Lan,
+                        contentDescription = "文件树",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
