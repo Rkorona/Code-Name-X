@@ -1341,7 +1341,7 @@ private fun EditorActionsBar(
             IconButton(onClick = onToggleKeyboard) {
                 Icon(
                     imageVector = if (isKeyboardEnabled)
-                        Icons.Default.KeyboardHide else Icons.Default.KeyboardLock,
+                        Icons.Default.KeyboardHide else Icons.Default.Keyboard,
                     contentDescription = "软键盘",
                     modifier = Modifier.size(24.dp),
                     tint = if (isKeyboardEnabled)
